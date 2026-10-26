@@ -236,7 +236,6 @@
     register: [["input", "직접 입력", () => inputView(null)], ["paste", "붙여넣기·사진", () => importView()]],
   };
   document.addEventListener("click", (e) => {
-    if (e.target.closest && e.target.closest("#wImport")) { pullLounge(document.getElementById("wMsg")); return; }
     const a = e.target.closest && e.target.closest("a.ph");
     if (!a) return;
     e.preventDefault();
@@ -287,19 +286,9 @@
     if (rounds.length) return backupDue() ? `<div class="notice" style="margin-bottom:10px">💾 기록이 이 휴대폰에만 있습니다. ${ls.get(KEY_BACKUP) ? "마지막 백업 후 2주가 지났습니다." : "아직 백업 파일이 없습니다."} <a href="#/settings">설정 → 데이터</a>에서 <b>백업 파일 내려받기</b>를 해 두세요.</div>` : "";
     return `<div class="card welcome">
       <h3 class="mt0">👋 휴대폰 골프 라운지</h3>
-      <p>이 앱은 기록을 <b>이 휴대폰 안</b>에 저장합니다(인터넷·GitHub 필요 없음). 처음 한 번 아래 중 하나를 고르세요.</p>
-      <div class="row"><button class="btn" id="wImport" type="button">golf-lounge 웹 기록 가져오기</button><a class="btn ghost" href="#/settings">백업 파일에서 복원</a><a class="btn ghost" href="#/register">새로 시작(라운드 입력)</a></div>
-      <div id="wMsg" style="margin-top:8px"></div>
+      <p>이 앱은 기록을 <b>이 휴대폰 안</b>에만 저장합니다(인터넷·GitHub·다른 웹과 연결 없음).</p>
+      <div class="row"><a class="btn" href="#/register">라운드 입력으로 시작</a><a class="btn ghost" href="#/register/paste">스마트스코어 붙여넣기</a><a class="btn ghost" href="#/settings">백업 파일에서 복원</a></div>
     </div>`;
-  }
-  async function pullLounge(msgEl) {
-    try {
-      if (msgEl) msgEl.innerHTML = `<div class="notice">golf-lounge 웹에서 기록을 읽는 중…</div>`;
-      const n = await G.importFromLounge((t) => { if (msgEl) msgEl.innerHTML = `<div class="notice">가져오는 중… ${t}</div>`; });
-      await loadAll(true);
-      toast(`${n}라운드를 이 휴대폰으로 가져왔습니다.`, 4000);
-      route();
-    } catch (e) { if (msgEl) msgEl.innerHTML = ""; toast(e.message + " (인터넷 연결 확인)", 6000); }
   }
   async function claimSite(fresh) {
     if (fresh) await commit(() => [], "새 사용자: 빈 기록으로 시작");
@@ -1549,7 +1538,7 @@
   };
   function guideView() {
     // 가이드 본문의 메뉴 이름 중 바뀐 것만 맨 위에 알려 준다(2026.10.26 메뉴 정리)
-    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요. 처음 한 번 「golf-lounge 웹 기록 가져오기」로 기존 기록을 옮길 수 있습니다.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·샷 분석 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭입니다. 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
+    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·샷 분석 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭입니다. 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
     Guide.bind(app);
   }
 
@@ -1571,7 +1560,7 @@
         <div class="row" style="margin-top:10px"><button class="btn" id="bBackup" type="button">백업 파일 내려받기</button>
           <label class="btn ghost filebtn">백업 파일에서 복원<input type="file" accept="application/json,.json" id="fRestore" hidden></label></div>
         <p class="legend-note">${ls.get(KEY_BACKUP) ? `마지막 백업: ${new Date(ls.get(KEY_BACKUP)).toLocaleString("ko-KR")}` : "아직 백업한 적이 없습니다."} 백업 파일(기록·기준값·사진 포함)은 휴대폰 「다운로드」 폴더에 저장됩니다. <b>앱을 지우거나 Chrome 사이트 데이터를 지우면 기록도 지워지니</b> 라운드 후 가끔 백업하고, 파일은 다른 곳(PC·클라우드 드라이브)에도 옮겨 두세요.</p>
-        <div class="row" style="margin-top:6px"><button class="btn ghost" id="bPull" type="button">golf-lounge 웹 기록 다시 가져오기</button><button class="btn danger" id="bWipeAll" type="button">모든 기록 지우기</button></div>
+        <div class="row" style="margin-top:6px"><button class="btn danger" id="bWipeAll" type="button">모든 기록 지우기</button></div>
         <div id="dataMsg" style="margin-top:8px"></div>
       </div>
 
@@ -1632,10 +1621,6 @@
         $("dataMsg").innerHTML = `<div class="notice">「${esc(f.name)}」 ${arr.rounds ? arr.rounds.length : "?"}라운드로 지금 기록(${rounds.length}라운드)을 바꿀까요? <button class="btn danger" id="bRestore2" type="button">복원</button></div>`;
         $("bRestore2").onclick = async () => { const n = await G.importAll(arr); await loadAll(true); toast(`${n}라운드를 복원했습니다.`); settingsView(); };
       } catch (err) { toast("백업 파일을 읽지 못했습니다: " + err.message, 6000); }
-    };
-    $("bPull").onclick = () => {
-      $("dataMsg").innerHTML = `<div class="notice">golf-lounge 웹의 기록으로 이 휴대폰 기록(${rounds.length}라운드)을 <b>바꿉니다</b>. 휴대폰에서만 입력한 라운드는 사라지니 먼저 백업하세요. <button class="btn danger" id="bPull2" type="button">가져오기</button></div>`;
-      $("bPull2").onclick = () => pullLounge($("dataMsg"));
     };
     $("bWipeAll").onclick = () => {
       $("dataMsg").innerHTML = `<div class="notice">정말 ${rounds.length}라운드와 사진을 모두 지울까요? 백업 파일이 없으면 되살릴 수 없습니다. <button class="btn danger" id="bWipe2" type="button">지우기</button></div>`;

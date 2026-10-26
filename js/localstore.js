@@ -9,8 +9,6 @@ const GitHubStore = (() => {
   const ROUNDS = `${DATA_DIR}/rounds.json`;
   const SETTINGS = `${DATA_DIR}/settings.json`;
   const PHOTO_DIR = `${DATA_DIR}/photos/`;
-  // 처음 실행할 때 기존 기록을 가져올 곳(공개 웹 주소에서 읽기만 한다)
-  const LOUNGE = "https://supok00.github.io/golf-lounge/";
   const PRIMARY = { owner: "이 휴대폰", repo: "golf-lounge-hp", branch: "local" };
 
   let dbp = null;
@@ -88,24 +86,6 @@ const GitHubStore = (() => {
     for (const [k, v] of Object.entries(obj.photos || {})) if (String(k).startsWith(PHOTO_DIR) && String(v).startsWith("data:image/")) { await put(k, v); PHOTOS[k] = v; }
     return obj.rounds.length;
   }
-  /* golf-lounge 웹의 기록을 이 휴대폰으로 가져온다(공개 주소에서 읽기만, 한 번). 사진도 받아 휴대폰에 저장. */
-  async function importFromLounge(onProgress = () => {}) {
-    await init();
-    const j = async (f) => { const r = await fetch(`${LOUNGE}${f}?t=${Date.now()}`, { cache: "no-store" }); if (!r.ok) throw new Error(`golf-lounge에서 ${f}을(를) 읽지 못했습니다(${r.status}).`); return r.json(); };
-    const rounds = await j(ROUNDS), settings = await j(SETTINGS).catch(() => null);
-    const photos = {};
-    const paths = [...new Set(rounds.flatMap((r) => r.photos || []))];
-    for (const [i, p] of paths.entries()) {
-      onProgress(`사진 ${i + 1}/${paths.length}`);
-      try {
-        const res = await fetch(`https://raw.githubusercontent.com/supok00/golf-lounge/main/${p}`);
-        if (!res.ok) continue;
-        const blob = await res.blob();
-        photos[p] = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(blob); });
-      } catch { /* 못 받은 사진은 건너뜀 */ }
-    }
-    return importAll({ rounds, settings, photos });
-  }
   async function wipe() {
     await init();
     for (const k of await keys()) await del(k);
@@ -123,7 +103,7 @@ const GitHubStore = (() => {
   return {
     cfg, setCfg: () => true, canWrite: () => true, load, update, putFile, deleteFile, rawUrl,
     syncStatus: async () => [], resync: async () => {}, pending: () => false, testToken: async () => ({ ok: true, msg: "휴대폰에 저장합니다(연결 필요 없음)." }),
-    exportAll, importAll, importFromLounge, wipe, usage, history, init,
+    exportAll, importAll, wipe, usage, history, init,
     PRIMARY, MIRRORS: [], IS_ORIGIN: false, ORIGIN: PRIMARY, ROUNDS, SETTINGS, DATA_DIR, LOCAL: true,
   };
 })();
