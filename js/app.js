@@ -102,13 +102,12 @@
     try {
       const r = await G.load();
       source = r.source;
-      if (Array.isArray(r.data)) {
-        rounds = r.data;
-        loadedAt = new Date();
-        ls.set(KEY_CACHE, rounds);
-      }
+      // 휴대폰 저장소가 비었으면(모두 지운 뒤 등) 화면의 기록·기준값도 비운다 — 이전 값이 남아 보이지 않게
+      rounds = Array.isArray(r.data) ? r.data : [];
+      loadedAt = new Date();
+      ls.set(KEY_CACHE, rounds);
       const s = await G.load(G.SETTINGS);
-      if (s.data) settings = deepMerge(structuredClone(S.DEFAULT_SETTINGS), s.data);
+      settings = s.data ? deepMerge(structuredClone(S.DEFAULT_SETTINGS), s.data) : structuredClone(S.DEFAULT_SETTINGS);
       if (!quiet) toast("휴대폰에 저장된 기록을 다시 읽었습니다.");
     } catch (e) {
       const cached = ls.get(KEY_CACHE);
@@ -1640,7 +1639,7 @@
     };
     $("bWipeAll").onclick = () => {
       $("dataMsg").innerHTML = `<div class="notice">정말 ${rounds.length}라운드와 사진을 모두 지울까요? 백업 파일이 없으면 되살릴 수 없습니다. <button class="btn danger" id="bWipe2" type="button">지우기</button></div>`;
-      $("bWipe2").onclick = async () => { await G.wipe(); settings = structuredClone(S.DEFAULT_SETTINGS); await loadAll(true); toast("모든 기록을 지웠습니다."); route(); };
+      $("bWipe2").onclick = async () => { await G.wipe(); ls.del(KEY_BACKUP); await loadAll(true); toast("모든 기록을 지웠습니다."); location.hash = "#/dashboard"; route(); };
     };
     $("bSaveSet").onclick = async () => {
       app.querySelectorAll("[data-t]").forEach((el) => { const t = tg[el.dataset.t]; const v = Number(el.value); if (el.value !== "" && isNum(v)) t.v = t.fmt === "%" ? v / 100 : v; });

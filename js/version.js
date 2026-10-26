@@ -4,7 +4,7 @@
 const APP_VERSION = "1.1";
 // 배포 번호: 버전은 그대로 두고 배포할 때마다 이 값만 바꾼다. sw.js 캐시 이름에 들어가
 // 휴대폰에 설치한 앱이 새 배포를 알아채고 「새 버전이 있습니다 — 지금 적용」을 띄운다.
-const APP_BUILD = "hp-2026.10.26-2";
+const APP_BUILD = "hp-2026.10.26-3";
 const APP_CHANGES = [
   {
     v: "1.1",
