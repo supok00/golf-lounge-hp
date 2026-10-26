@@ -1,0 +1,18 @@
+{
+  "name": "My Golf Lounge (휴대폰)",
+  "short_name": "골프 라운지",
+  "description": "골프 라운드 기록·분석 — 기록은 이 휴대폰에 저장",
+  "lang": "ko",
+  "id": "./",
+  "start_url": "./#/dashboard",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f8fc",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
