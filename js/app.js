@@ -820,9 +820,10 @@
         const h = a + k, par = pars[h], st = hm[h];
         if (!isNum(par)) return `<td><input data-hs="${i}" data-h="${h}" type="number" inputmode="numeric" min="1" max="15" value="${st ?? ""}" title="Par를 몰라 타수로 입력"></td>`;
         const ov = isNum(st) ? st - par : null;
-        return `<td><select data-hs="${i}" data-h="${h}" data-par="${par}"><option value=""></option>${OVER_OPTS.map((o) => `<option value="${o}" ${ov === o ? "selected" : ""}>${o > 0 ? "+" + o : o}</option>`).join("")}</select></td>`;
+        return `<td><input data-hs="${i}" data-h="${h}" data-par="${par}" list="overList" inputmode="numeric" autocomplete="off" value="${ov === null ? "" : ov > 0 ? "+" + ov : ov}"></td>`;
       }).join("")}</tr></tbody></table></div>`;
-    return `<div class="hgrid-box"><div class="hgrid-head">✏️ <b>${esc(c.name) || "새 동반자"}</b> 홀별 스코어 <span class="muted">(Par 대비 오버 타수 — 파 0 · 보기 +1 · 더블 +2 · 버디 -1. Par를 모르는 홀만 타수로 입력)</span></div>
+    return `<div class="hgrid-box"><div class="hgrid-head">✏️ <b>${esc(c.name) || "새 동반자"}</b> 홀별 스코어 <span class="muted">(Par 대비 오버 타수 — 숫자로 쓰거나 칸을 눌러 목록에서 고르기. 파 0 · 보기 1 · 더블 2 · 버디 -1. Par를 모르는 홀만 타수로 입력)</span></div>
+      <datalist id="overList">${OVER_OPTS.map((o) => `<option value="${o > 0 ? "+" + o : o}">`).join("")}</datalist>
       ${half(1, "전반")}${half(10, "후반")}<p class="legend-note" data-hsum>${hsumText(Companions.summary(c, pars))}</p></div>`;
   }
 
@@ -830,16 +831,20 @@
    * 저장은 부르는 쪽에서 한다(라운드 상세는 바로, 붙여넣기 등록은 라운드를 등록할 때). */
   function companionEditor(box, st, pars, onChange = () => {}) {
     const changed = () => { onChange(); draw(); };
+    // 전반·후반·합계 타수 아래에 Par 대비 오버(그 구간 Par를 모두 알 때만)
+    const parSum = (a, b) => { const xs = Array.from({ length: b - a + 1 }, (_, k) => pars[a + k]); return xs.every(isNum) ? S.sum(xs) : null; };
+    const PS = { front: parSum(1, 9), back: parSum(10, 18), total: parSum(1, 18) };
+    const overOf = (v, k) => (isNum(v) && isNum(PS[k]) ? `<br><span class="${v - PS[k] > 0 ? "ng" : "ok"}" style="font-size:12px">${sgn(v - PS[k], 0)}</span>` : "");
     function draw() {
       holeGrid.pars = pars;
       const bad = st.comps.some((c) => c.name.startsWith("이름?"));
       box.innerHTML = `
-        <div class="tbl-wrap"><table><thead><tr><th class="l">이름(별명)</th><th>전반</th><th>후반</th><th>총타수</th><th>홀 기록</th><th></th></tr></thead>
+        <div class="tbl-wrap"><table><thead><tr><th class="l">이름(별명)</th><th>전반<br><span class="muted">오버</span></th><th>후반<br><span class="muted">오버</span></th><th>총타수<br><span class="muted">오버</span></th><th>홀 기록</th><th></th></tr></thead>
         <tbody>${st.comps.length ? st.comps.map((c, i) => {
           const s = Companions.summary(c, pars), hasH = (c.holes || []).length > 0;
           const warn = (c.warnings || []).filter((w) => !w.startsWith("이름에"));
           return `<tr><td class="l"><input data-cn="${i}" value="${esc(c.name)}" placeholder="예: 철수, A" class="${needName(c.name) ? "warn" : ""}" style="width:130px">${c.orig && c.orig !== c.name ? `<br><span class="muted">원문 ${esc(c.orig)}</span>` : ""}${warn.length ? `<br><span class="ng">${esc(warn.join(" / "))}</span>` : ""}</td>
-            ${["front", "back", "total"].map((k) => (hasH ? `<td>${s[k] ?? "-"}</td>` : `<td><input data-cv="${i}" data-k="${k}" type="number" inputmode="numeric" value="${isNum(c[k]) ? c[k] : ""}" style="width:64px"></td>`)).join("")}
+            ${["front", "back", "total"].map((k) => { const ov = overOf(s[k], k); return hasH ? `<td><b>${s[k] ?? "-"}</b>${ov}</td>` : `<td><input data-cv="${i}" data-k="${k}" type="number" inputmode="numeric" value="${isNum(c[k]) ? c[k] : ""}" style="width:64px">${ov}</td>`; }).join("")}
             <td>${hasH ? s.holeCount + "홀" : "-"}<br><button class="link" data-hopen="${i}" type="button">${st.openH === i ? "입력 닫기" : hasH ? "홀 점수 수정" : "홀 점수 입력"}</button></td><td><button class="link" data-cdel="${i}" type="button">삭제</button></td></tr>`;
         }).join("") : `<tr><td colspan="6" class="muted">아직 동반자가 없습니다.</td></tr>`}</tbody></table></div>
         <p class="legend-note${bad ? " ng" : ""}">${bad ? "사진에서 이름을 읽지 못한 동반자(<b>이름?</b>)는 이름을 적어 주세요. " : ""}저장소가 공개라 실명 대신 <b>별명·이니셜</b>이나 <b>*로 가린 이름</b>(예: 홍*동)을 권장합니다.</p>
@@ -862,14 +867,15 @@
         if (c.orig && c.orig.includes("*") && v && !v.includes("*")) { const al = ls.get(KEY_ALIAS) || {}; al[c.orig] = v; ls.set(KEY_ALIAS, al); }
         changed();
       }));
-      box.querySelectorAll("[data-cv]").forEach((el) => (el.onchange = () => { st.comps[el.dataset.cv][el.dataset.k] = el.value === "" ? null : Number(el.value); onChange(); }));
+      box.querySelectorAll("[data-cv]").forEach((el) => (el.onchange = () => { st.comps[el.dataset.cv][el.dataset.k] = el.value === "" ? null : Number(el.value); changed(); }));
       box.querySelectorAll("[data-cdel]").forEach((el) => (el.onclick = () => { st.comps.splice(Number(el.dataset.cdel), 1); changed(); }));
       box.querySelectorAll("[data-pdel]").forEach((el) => (el.onclick = () => { const [p] = st.photos.splice(Number(el.dataset.pdel), 1); if (p.path) st.removed.push(p.path); changed(); }));
       q('[data-act="addH"]').onclick = () => { st.comps.push({ name: "", front: null, back: null, total: null, holes: [] }); st.openH = st.comps.length - 1; changed(); setTimeout(() => box.querySelector(`[data-cn="${st.openH}"]`)?.focus(), 0); };
       box.querySelectorAll("[data-hopen]").forEach((b) => (b.onclick = () => { const i = Number(b.dataset.hopen); st.openH = st.openH === i ? null : i; draw(); }));
       // 홀 점수 칸: 입력할 때마다 기록만 바꾸고 합계 글자만 고친다(다시 그리면 입력 중인 칸의 커서가 사라짐)
       box.querySelectorAll("[data-hs]").forEach((el) => (el.oninput = () => {
-        const c = st.comps[Number(el.dataset.hs)], h = Number(el.dataset.h), raw = el.value === "" ? null : Number(el.value);
+        const txt = el.value.trim().replace(/^\+/, "");
+        const c = st.comps[Number(el.dataset.hs)], h = Number(el.dataset.h), raw = txt === "" || txt === "-" || !/^-?\d+$/.test(txt) ? null : Number(txt);
         const par = el.dataset.par ? Number(el.dataset.par) : null;
         const v = isNum(raw) && isNum(par) ? par + raw : raw;   // 오버 타수를 고르면 Par를 더해 타수로 저장
         c.holes = (c.holes || []).filter((x) => x.h !== h);
@@ -879,7 +885,7 @@
         const sm = Companions.summary(c, pars);
         const t = box.querySelector("[data-hsum]");
         if (t) t.innerHTML = hsumText(sm);
-        el.classList.toggle("warn", isNum(v) && (v < 1 || v > 15));
+        el.classList.toggle("warn", (txt !== "" && txt !== "-" && !isNum(raw)) || (isNum(v) && (v < 1 || v > 15)));
         onChange();
       }));
       q('[data-act="add"]').onclick = () => { st.comps.push({ name: "", front: null, back: null, total: null, holes: [] }); changed(); };
