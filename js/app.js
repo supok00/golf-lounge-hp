@@ -810,12 +810,18 @@
 
   // 동반자 한 명의 18홀 타수 입력칸(전반·후반 두 줄). 칸 위에 Par를 보여 줘 타수로 적기 쉽게 한다.
   const hsumText = (sm) => `전반 <b>${sm.front ?? "-"}</b> · 후반 <b>${sm.back ?? "-"}</b> · 합계 <b>${sm.total ?? "-"}</b>${isNum(sm.over) ? ` (${sgn(sm.over, 0)})` : ""} · 입력 ${sm.holeCount}홀`;
+  const OVER_OPTS = [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
   function holeGrid(c, i) {
     const hm = Object.fromEntries((c.holes || []).map((x) => [x.h, x.st]));
     const pars = holeGrid.pars || {};
     const half = (a, label) => `<div class="tbl-wrap card-tbl"><table class="hgrid"><thead><tr><th class="l">${label}</th>${Array.from({ length: 9 }, (_, k) => `<th>${a + k}${isNum(pars[a + k]) ? `<br><span class="muted">P${pars[a + k]}</span>` : ""}</th>`).join("")}</tr></thead>
-      <tbody><tr><th class="l">타수</th>${Array.from({ length: 9 }, (_, k) => `<td><input data-hs="${i}" data-h="${a + k}" type="number" inputmode="numeric" min="1" max="15" value="${hm[a + k] ?? ""}"></td>`).join("")}</tr></tbody></table></div>`;
-    return `<div class="hgrid-box"><div class="hgrid-head">✏️ <b>${esc(c.name) || "새 동반자"}</b> 홀별 타수 <span class="muted">(Par 대비가 아니라 친 타수 — 예: 파4 보기면 5)</span></div>
+      <tbody><tr><th class="l">오버<br><span class="muted">+/-</span></th>${Array.from({ length: 9 }, (_, k) => {
+        const h = a + k, par = pars[h], st = hm[h];
+        if (!isNum(par)) return `<td><input data-hs="${i}" data-h="${h}" type="number" inputmode="numeric" min="1" max="15" value="${st ?? ""}" title="Par를 몰라 타수로 입력"></td>`;
+        const ov = isNum(st) ? st - par : null;
+        return `<td><select data-hs="${i}" data-h="${h}" data-par="${par}"><option value=""></option>${OVER_OPTS.map((o) => `<option value="${o}" ${ov === o ? "selected" : ""}>${o > 0 ? "+" + o : o}</option>`).join("")}</select></td>`;
+      }).join("")}</tr></tbody></table></div>`;
+    return `<div class="hgrid-box"><div class="hgrid-head">✏️ <b>${esc(c.name) || "새 동반자"}</b> 홀별 스코어 <span class="muted">(Par 대비 오버 타수 — 파 0 · 보기 +1 · 더블 +2 · 버디 -1. Par를 모르는 홀만 타수로 입력)</span></div>
       ${half(1, "전반")}${half(10, "후반")}<p class="legend-note" data-hsum>${hsumText(Companions.summary(c, pars))}</p></div>`;
   }
 
@@ -862,7 +868,9 @@
       box.querySelectorAll("[data-hopen]").forEach((b) => (b.onclick = () => { const i = Number(b.dataset.hopen); st.openH = st.openH === i ? null : i; draw(); }));
       // 홀 점수 칸: 입력할 때마다 기록만 바꾸고 합계 글자만 고친다(다시 그리면 입력 중인 칸의 커서가 사라짐)
       box.querySelectorAll("[data-hs]").forEach((el) => (el.oninput = () => {
-        const c = st.comps[Number(el.dataset.hs)], h = Number(el.dataset.h), v = el.value === "" ? null : Number(el.value);
+        const c = st.comps[Number(el.dataset.hs)], h = Number(el.dataset.h), raw = el.value === "" ? null : Number(el.value);
+        const par = el.dataset.par ? Number(el.dataset.par) : null;
+        const v = isNum(raw) && isNum(par) ? par + raw : raw;   // 오버 타수를 고르면 Par를 더해 타수로 저장
         c.holes = (c.holes || []).filter((x) => x.h !== h);
         if (isNum(v) && v > 0) c.holes.push({ h, st: v });
         c.holes.sort((a, b) => a.h - b.h);
