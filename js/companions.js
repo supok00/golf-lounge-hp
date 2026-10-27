@@ -74,6 +74,7 @@ const Companions = (() => {
       if (holes.some((v) => v > 15)) continue;
       const tots = seq.length - holes.length;
       const last = seq.at(-1), hs = sum(holes);
+      if (tots > 0 && last < 20) continue;   // 합계 칸은 9홀이라도 20 이상 — 작은 수를 합계로 보면 마지막 홀을 잃는다
       // 합계 칸 맞음: 타수 합 그대로이거나(+/- 줄이면 합계가 타수라 홀 합보다 큼 — 그때는 크기만 본다)
       const fits = tots === 0 ? 1 : last === hs || last === sum(holes.slice(-9)) ? 3 : last > hs ? 2 : 0;
       const score = fits * 100 - popcount(mask);
@@ -102,7 +103,9 @@ const Companions = (() => {
         continue;
       }
       let label = m[1].trim();
-      const toks = m[2].match(/[+-]?\d+/g) || [];
+      let toks = m[2].match(/[+-]?\d+/g) || [];
+      // 이름 자리를 숫자로 잘못 읽은 줄(사진, 예: 2134 4 5 3 …): 맨 앞의 점수일 수 없는 큰 수는 이름 자리로 보고 뺀다
+      if (!m[1].trim() && !pending && toks.length >= 10 && toks[0].length >= 3 && Math.abs(Number(toks[0])) > 15) toks = toks.slice(1);
       const nums = toks.length >= 5 ? splitMerged(toks) : toks.map(Number);
       if (SKIP.test(label)) continue;
       if (/^(score|스코어)$/i.test(label)) {
@@ -113,9 +116,9 @@ const Companions = (() => {
         if (pending) label = pending;
         else if (nums.length >= 9) {
           // 이름을 숫자로 잘못 읽은 줄(사진): 홀 칸보다 하나 많고 첫 값이 점수일 수 없으면 그 값을 버린다.
-          // 이름은 「이름*n」으로 두어 빨간 칸으로 표시 — 직접 적어야 저장된다.
+          // 이름은 「이름?n」으로 두어 빨간 칸으로 표시 — 직접 적어야 저장된다(*는 가려 쓴 이름으로 그대로 쓴다).
           if ((nums.length === 10 || nums.length === 11 || nums.length === 19) && Math.abs(nums[0]) > 15) nums.shift();
-          label = `이름*${++unnamed}`;
+          label = `이름?${++unnamed}`;
         } else continue;
       }
       chunks.push({ name: label, nums });
@@ -154,7 +157,7 @@ const Companions = (() => {
       // 홀 기록과 따로 적은 합계가 다르면 알려 준다
       const s = summary(p);
       if (p.total !== null && s.holesTotal !== null && p.total !== s.holesTotal) p.warnings.push(`총타수 표기 ${p.total} ≠ 홀 합계 ${s.holesTotal}`);
-      if (/\*/.test(name)) p.warnings.push(name.startsWith("이름*") ? "이름을 읽지 못함 — 적어 주세요" : "이름에 *가 있음 — 고쳐 주세요");
+      if (name.startsWith("이름?")) p.warnings.push("이름을 읽지 못함 — 적어 주세요");
       out.push(p);
     }
     return out;

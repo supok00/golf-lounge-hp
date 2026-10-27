@@ -731,9 +731,10 @@
     else for (const k of ["front", "back", "total"]) if (isNum(c[k])) o[k] = c[k];
     return o;
   }
+  const needName = (n) => !String(n || "").trim() || String(n).startsWith("이름?");   // 빈 이름, 사진에서 못 읽은 이름(*로 가린 이름은 괜찮음)
   const compProblem = (st) => {
     if (st.comps.some((c) => !c.name.trim())) return "이름이 빈 동반자가 있습니다.";
-    if (st.comps.some((c) => c.name.includes("*"))) return "이름 가운데 *가 있는 동반자가 있습니다. 이름을 고쳐 주세요.";
+    if (st.comps.some((c) => c.name.startsWith("이름?"))) return "사진에서 이름을 읽지 못한 동반자(이름?)가 있습니다. 이름을 적어 주세요.";
     if (new Set(st.comps.map((c) => c.name.trim())).size !== st.comps.length) return "같은 이름의 동반자가 두 번 있습니다.";
     return "";
   };
@@ -831,17 +832,17 @@
     const changed = () => { onChange(); draw(); };
     function draw() {
       holeGrid.pars = pars;
-      const bad = st.comps.some((c) => c.name.includes("*"));
+      const bad = st.comps.some((c) => c.name.startsWith("이름?"));
       box.innerHTML = `
         <div class="tbl-wrap"><table><thead><tr><th class="l">이름(별명)</th><th>전반</th><th>후반</th><th>총타수</th><th>홀 기록</th><th></th></tr></thead>
         <tbody>${st.comps.length ? st.comps.map((c, i) => {
           const s = Companions.summary(c, pars), hasH = (c.holes || []).length > 0;
           const warn = (c.warnings || []).filter((w) => !w.startsWith("이름에"));
-          return `<tr><td class="l"><input data-cn="${i}" value="${esc(c.name)}" placeholder="예: 철수, A" class="${c.name.includes("*") || !c.name.trim() ? "warn" : ""}" style="width:130px">${c.orig && c.orig !== c.name ? `<br><span class="muted">원문 ${esc(c.orig)}</span>` : ""}${warn.length ? `<br><span class="ng">${esc(warn.join(" / "))}</span>` : ""}</td>
+          return `<tr><td class="l"><input data-cn="${i}" value="${esc(c.name)}" placeholder="예: 철수, A" class="${needName(c.name) ? "warn" : ""}" style="width:130px">${c.orig && c.orig !== c.name ? `<br><span class="muted">원문 ${esc(c.orig)}</span>` : ""}${warn.length ? `<br><span class="ng">${esc(warn.join(" / "))}</span>` : ""}</td>
             ${["front", "back", "total"].map((k) => (hasH ? `<td>${s[k] ?? "-"}</td>` : `<td><input data-cv="${i}" data-k="${k}" type="number" inputmode="numeric" value="${isNum(c[k]) ? c[k] : ""}" style="width:64px"></td>`)).join("")}
             <td>${hasH ? s.holeCount + "홀" : "-"}<br><button class="link" data-hopen="${i}" type="button">${st.openH === i ? "입력 닫기" : hasH ? "홀 점수 수정" : "홀 점수 입력"}</button></td><td><button class="link" data-cdel="${i}" type="button">삭제</button></td></tr>`;
         }).join("") : `<tr><td colspan="6" class="muted">아직 동반자가 없습니다.</td></tr>`}</tbody></table></div>
-        <p class="legend-note${bad ? " ng" : ""}">${bad ? "이름 가운데 <b>*</b>가 있는 동반자는 이름을 고쳐 주세요. " : ""}저장소가 공개라 실명 대신 <b>별명·이니셜</b>을 권장합니다. *가 있던 이름을 고치면 이 기기에 기억해 두었다가 다음 붙여넣기 때 자동으로 바꿉니다.</p>
+        <p class="legend-note${bad ? " ng" : ""}">${bad ? "사진에서 이름을 읽지 못한 동반자(<b>이름?</b>)는 이름을 적어 주세요. " : ""}저장소가 공개라 실명 대신 <b>별명·이니셜</b>이나 <b>*로 가린 이름</b>(예: 홍*동)을 권장합니다.</p>
         ${isNum(st.openH) && st.comps[st.openH] ? holeGrid(st.comps[st.openH], st.openH) : ""}
         <div class="row" style="margin-top:6px"><button class="btn ghost" data-act="addH" type="button">+ 홀별로 직접 추가</button><button class="btn ghost" data-act="add" type="button">+ 스코어만 추가</button></div>
         <h4>붙여넣기로 추가</h4>
@@ -1188,7 +1189,7 @@
         if (!CR.length) return "";
         return `<h2>동반자 전적 <span class="muted">18홀 총타수 비교 · 이름을 고치면 모든 라운드에 반영</span></h2>
         <div class="tbl-wrap"><table><thead><tr><th class="l">동반자</th><th>함께</th><th>나의 승-패-무</th><th>내 평균</th><th>동반자 평균</th><th>평균 차</th><th>최근</th><th></th></tr></thead>
-        <tbody>${CR.map((x, i) => { const d = x.mine.length ? S.avg(x.theirs) - S.avg(x.mine) : null; return `<tr><td class="l"><b>${esc(x.name)}</b>${x.name.includes("*") ? ` <span class="pill ng">이름 확인</span>` : ""}</td><td>${x.n}회</td><td>${x.mine.length ? `<b>${x.w}</b>-${x.l}-${x.t}` : "-"}</td><td>${f1(S.avg(x.mine))}</td><td>${f1(S.avg(x.theirs))}</td><td class="${isNum(d) ? (d > 0 ? "ok" : d < 0 ? "ng" : "") : ""}">${isNum(d) ? (d > 0 ? `내가 ${d.toFixed(1)}타 앞섬` : d < 0 ? `${(-d).toFixed(1)}타 뒤짐` : "같음") : "-"}</td><td>${dot(x.last)}</td><td><button class="link" data-rename="${i}" type="button" ${G.canWrite() ? "" : "disabled"}>이름 고치기</button></td></tr>`; }).join("")}</tbody></table></div>
+        <tbody>${CR.map((x, i) => { const d = x.mine.length ? S.avg(x.theirs) - S.avg(x.mine) : null; return `<tr><td class="l"><b>${esc(x.name)}</b></td><td>${x.n}회</td><td>${x.mine.length ? `<b>${x.w}</b>-${x.l}-${x.t}` : "-"}</td><td>${f1(S.avg(x.mine))}</td><td>${f1(S.avg(x.theirs))}</td><td class="${isNum(d) ? (d > 0 ? "ok" : d < 0 ? "ng" : "") : ""}">${isNum(d) ? (d > 0 ? `내가 ${d.toFixed(1)}타 앞섬` : d < 0 ? `${(-d).toFixed(1)}타 뒤짐` : "같음") : "-"}</td><td>${dot(x.last)}</td><td><button class="link" data-rename="${i}" type="button" ${G.canWrite() ? "" : "disabled"}>이름 고치기</button></td></tr>`; }).join("")}</tbody></table></div>
         <div id="renameBox"></div>`;
       })()}
 
@@ -1226,7 +1227,6 @@
       document.getElementById("rnGo").onclick = async () => {
         const nv = document.getElementById("rnNew").value.trim();
         if (!nv || nv === old) return;
-        if (nv.includes("*")) { toast("*를 빼고 적어 주세요."); return; }
         try {
           await commit((data) => data.map((r) => (r.companions && r.companions.some((c) => c.name === old) && !r.companions.some((c) => c.name === nv) ? { ...r, companions: r.companions.map((c) => (c.name === old ? { ...c, name: nv } : c)) } : r)), `동반자 이름 변경: ${old} → ${nv}`);
           if (old.includes("*")) { const al = ls.get(KEY_ALIAS) || {}; al[old] = nv; ls.set(KEY_ALIAS, al); }
@@ -1241,7 +1241,7 @@
   // ───────────── 스마트스코어 붙여넣기 등록 ─────────────
   let parsed = [];
   let compIdx = -1;
-  const compLabel = (r) => `${r.st.comps.length ? `👥 ${r.st.comps.length}명` : "-"}${r.st.photos.length ? ` · 📷 ${r.st.photos.length}` : ""}${r.st.comps.some((c) => c.name.includes("*")) ? ` <span class="pill ng">이름 확인</span>` : ""}`;
+  const compLabel = (r) => `${r.st.comps.length ? `👥 ${r.st.comps.length}명` : "-"}${r.st.photos.length ? ` · 📷 ${r.st.photos.length}` : ""}${r.st.comps.some((c) => needName(c.name)) ? ` <span class="pill ng">이름 확인</span>` : ""}`;
   function importView() {
     const known = [...new Set(rounds.map((r) => r.course))];
     app.innerHTML = `
@@ -1251,7 +1251,7 @@
         <li>읽은 결과를 확인하고 고칠 수 있습니다. 같은 날짜·골프장이 이미 있으면 기본으로 빼 둡니다.</li>
         <li><b>홀 길이도 넣을 수 있습니다.</b> 스마트스코어 텍스트에는 거리가 없으니, 각 반쪽의 Par/Score 줄 아래에 <code>거리 343 318 314 ...</code>처럼 한 줄을 더 적으세요. 앞에 티 이름을 쓰면(<code>White 343 318 ...</code>) 그 티로 기록되고, <code>Yard 375 ...</code>로 쓰면 m로 바꿔 저장합니다. 18홀을 한 줄에 적어도 됩니다. 거리는 <b>실제로 친 티</b> 기준으로 넣으세요.</li>
         <li><b>스코어카드 표 형식도 됩니다</b>: 날짜 줄, 「홀 1 2 3 …」·「PAR …」 줄, 그리고 선수마다 「이름 +/- … SUB TOT」 줄로 된 결과를 붙여 넣고 「읽기」를 누르면 확인 카드가 나옵니다. 내 줄을 「나」로 고르고 골프장을 적으면 나머지 선수는 동반자로 들어갑니다.</li>
-        <li><b>동반자</b>: 붙여 넣은 글에 「이름 숫자…」 줄(예: <code>홍*동 1 0 2 …</code>, <code>철수 85</code>)이 있으면 동반자로 읽습니다. 「추가·편집」에서 스코어만 넣거나, 따로 붙여 넣거나, 스코어카드 사진에서 읽을 수 있고 사진을 라운드에 붙일 수도 있습니다. 이름 가운데 *가 있으면 고쳐 주세요.</li>
+        <li><b>동반자</b>: 붙여 넣은 글에 「이름 숫자…」 줄(예: <code>홍*동 1 0 2 …</code>, <code>철수 85</code>)이 있으면 동반자로 읽습니다. 「추가·편집」에서 스코어만 넣거나, 따로 붙여 넣거나, 스코어카드 사진에서 읽을 수 있고 사진을 라운드에 붙일 수도 있습니다. 이름은 *로 가려 적어도 됩니다(예: 홍*동).</li>
         <li>홀별 Par·Score·거리와 티오프 시간이 들어옵니다. 퍼트 등 상세 항목은 등록 뒤 「수정」에서 채우면 됩니다.</li>
       </ul>
       ${G.canWrite() ? "" : `<div class="notice">저장하려면 <a href="#/settings">설정</a>에서 GitHub 토큰을 넣어 주세요. 읽기와 확인은 지금도 됩니다.</div>`}
