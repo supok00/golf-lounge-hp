@@ -170,18 +170,19 @@
   function courseHoles(r) {
     const club = findCourse(r.course);
     if (!club) return null;
-    let tee = null, green = "";
+    let tee = null, green = "", notes = [];
     const nine = (name, back) => {
       const cs = club.courses.find((x) => normName(x.name) === normName(name)) || (club.courses.length === 1 ? club.courses[0] : null);
       const tk = cs && Object.keys(cs.tees || {}).find((k) => teeKey(k) === teeKey(r.tee));
       if (!tk) return [];
       tee = tk; green = cs.tees[tk].green || green;
+      if (cs.tees[tk].note && !notes.includes(cs.tees[tk].note)) notes.push(`${cs.name}: ${cs.tees[tk].note}`);
       let hs = cs.tees[tk].holes;
       if (hs.length === 18) hs = hs.filter((h) => (back ? h.h > 9 : h.h <= 9));
       return hs.map((h, i) => ({ ...h, h: (back ? 10 : 1) + i }));
     };
     const holes = [...nine(r.front, false), ...nine(r.back || r.front, true)];
-    return holes.length ? { club, tee, green, holes } : null;
+    return holes.length ? { club, tee, green, holes, notes: [...new Set(notes)] } : null;
   }
   // 코스 정보가 있는 골프장·코스·티 이름(입력 화면 안내용)
   const courseChoices = () => courseDB.flatMap((c) => c.courses.flatMap((cs) => Object.keys(cs.tees || {}).map((t) => `${c.name} ${cs.name}코스 ${t}`)));
@@ -207,6 +208,7 @@
       ${x.tip ? `<div class="hg-tip">📍 ${esc(x.tip)}</div>` : ""}
       ${x.map ? `<button type="button" class="link hg-map" data-map="${x.h}">🗺 홀 그림</button>` : ""}</div>`;
     return `<h3>홀별 야디지 · 공략 <span class="muted">${CH ? `${esc(CH.club.name)} ${esc(CH.tee)} 티${CH.green ? ` · ${CH.green}그린 기준` : ""}` : "입력한 거리 기준"} · OUT ${tot(1, 9, "dist")}m · IN ${tot(10, 18, "dist")}m</span></h3>
+      ${CH?.notes.some((n) => /없|확인|추정/.test(n)) ? `<div class="notice" style="margin-bottom:8px">⚠ 등록 기준 확인: ${CH.notes.map(esc).join(" / ")}</div>` : ""}
       <div class="hguide">${rows.map(card).join("")}</div>
       <p class="legend-note">「내 공략」은 <a href="#/settings">내 클럽 거리</a>로 계산한 추정입니다(티샷은 드라이버 평균 거리 가정${Clubs.isDefault(settings) ? ", 지금은 예시 클럽 거리" : ""}). 「📍」는 골프장 홈페이지 코스 안내를 요약한 공략이고, 「🗺 홀 그림」은 홈페이지 홀맵(해저드·벙커까지 거리, 고저차 포함 · 그림 속 숫자는 야드)입니다. 거리는 모두 미터(홈페이지 야드 × 0.9144)입니다.${CH?.club.url ? ` 출처: <a href="${esc(CH.club.url)}" target="_blank" rel="noopener">${esc(CH.club.name)} 홈페이지</a> (${esc(CH.club.updated || "")})` : ""}</p>`;
   }
@@ -1297,7 +1299,7 @@
           <div class="tbl-wrap"><table><thead><tr><th class="l">영역</th><th>이 라운드</th><th>점수</th><th>100점 기준(목표)</th></tr></thead>
             <tbody>${Object.entries(settings.radar).map(([k, c]) => `<tr><td class="l"><b>${c.label}</b><br><span class="muted">${c.metric}</span></td><td>${rawFmt(k, R1.raw[k])}</td><td class="${isNum(rad[k]) ? (rad[k] >= settings.radarTarget ? "ok" : "ng") : ""}"><b>${rad[k] ?? "-"}</b></td><td class="muted">${rawFmt(k, c.full)}</td></tr>`).join("")}</tbody></table></div>
         </div>
-        <p class="legend-note">이 라운드 <b>한 경기만</b>의 지표를 점수로 바꾼 것입니다(홈의 육각형은 최근 5라운드 평균이라 한 경기보다 덜 들쭉날쭉합니다). 주황 점선은 목표선 ${settings.radarTarget}점, 표의 「100점 기준」이 그 목표에 해당하는 실제 값입니다.</p></div>` : ""}
+        <p class="legend-note">이 라운드 <b>한 경기만</b>의 지표를 점수로 바꾼 것입니다(홈의 육각형은 최근 5라운드 평균이라 한 경기보다 덜 들쭉날쭉합니다). 파랑(채움)은 이 라운드, 노랑 점선은 목표선 ${settings.radarTarget}점(홈 육각형과 같은 색), 표의 「100점 기준」이 그 목표에 해당하는 실제 값입니다.</p></div>` : ""}
       ${courseHoles(r) ? `<details class="card" style="margin-top:12px"><summary><b>홀별 야디지 · 공략</b> <span class="muted">${esc(r.course)} 코스 정보</span></summary>${courseGuide(r)}</details>` : ""}
       <h3>동반자 비교 <span class="muted">${(r.companions || []).length ? (r.companions || []).length + "명" : "없음"}</span></h3>
       ${companionCompare(r) || `<p class="muted">함께 친 동반자의 점수를 넣으면 순위·홀별로 비교합니다.</p>`}
@@ -1312,8 +1314,8 @@
         data: {
           labels: rk.map((k) => settings.radar[k].label),
           datasets: [
-            { label: "이 라운드", data: rk.map((k) => rad[k]), backgroundColor: "rgba(63,174,134,.22)", borderColor: "#3fae86", pointBackgroundColor: "#3fae86" },
-            { label: `목표 ${settings.radarTarget}점`, data: rk.map(() => settings.radarTarget), borderColor: "#ffb27a", borderDash: [6, 4], backgroundColor: "transparent", pointRadius: 0 },
+            { label: "이 라운드", data: rk.map((k) => rad[k]), backgroundColor: "rgba(0,85,255,.14)", borderColor: "#0055FF", borderWidth: 2.5, pointBackgroundColor: "#0055FF", pointRadius: 3.5 },
+            { label: `목표 ${settings.radarTarget}점`, data: rk.map(() => settings.radarTarget), borderColor: "#FFCC00", borderDash: [7, 4], borderWidth: 2.5, backgroundColor: "transparent", pointRadius: 0 },
           ],
         },
         options: baseOpts({ plugins: legendOn, scales: { r: { min: 0, max: 100, ticks: { stepSize: 20, display: true, showLabelBackdrop: true, backdropColor: "rgba(255,255,255,.75)", color: "#8a93a6", font: { size: 10 } }, pointLabels: { font: { size: 13, weight: "600" } } } } }),
@@ -1321,7 +1323,7 @@
           id: "radarVals1",
           afterDatasetsDraw(c) {
             const meta = c.getDatasetMeta(0), ctx = c.ctx;
-            ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.fillStyle = "#2f7d5b"; ctx.textAlign = "center";
+            ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.fillStyle = "#0044cc"; ctx.textAlign = "center";
             meta.data.forEach((pt, i) => { const v = c.data.datasets[0].data[i]; if (isNum(v)) ctx.fillText(v, pt.x, pt.y - 8); });
             ctx.restore();
           },
