@@ -649,8 +649,9 @@
   const HINT = {
     dist: "실제로 친 티 기준(m)",
     drive: "파3도 적어 두세요(드라이버 평균에는 파4·파5만)",
-    score: "파=0, 보기=1, 더블=2, 버디=-1", fw: "파4·파5만", miss: "L 왼쪽 / R 오른쪽 / H 훅 / S 슬라이스 / - 없음",
-    ong: "그린에 올라가기까지 친 타수(벌타 포함). 비우면 타수−퍼트로 계산", sg: "자동: 그린 놓친 홀에서 1퍼트로 막았거나 첫 퍼트 2m 이내면 ○",
+    score: "파=0, 보기=1, 더블=2, 버디=-1. 비우면 온그린 타수+퍼트로 계산",
+    putts: "비우면 스코어와 온그린 타수로 계산", fw: "파4·파5만", miss: "L 왼쪽 / R 오른쪽 / H 훅 / S 슬라이스 / - 없음",
+    ong: "그린에 올라가기까지 친 타수(벌타 포함). 비우면 스코어와 퍼트로 계산", sg: "자동: 그린 놓친 홀에서 1퍼트로 막았거나 첫 퍼트 2m 이내면 ○",
     gmiss: "그린을 놓친 방향", appr: "그린을 놓쳤을 때 핀까지 남은 거리",
   };
 
@@ -675,19 +676,26 @@
     const AUTO = Object.fromEntries(Object.keys(H).map((n) => [n, new Set()]));
     function derive(h) {
       const out = {};
-      const known = isNum(h.par) && isNum(h.score);
-      if (known && isNum(h.putts) && h.par + h.score - h.putts >= 1) out.ong = h.par + h.score - h.putts;
+      // 스코어·퍼트·온그린 타수는 「Par + 스코어 = 온그린 타수(벌타 포함) + 퍼트」로 묶여 있어 두 칸이면 나머지 하나를 계산한다.
+      // 직접 적은 칸만 근거로 쓴다(자동 칸끼리 서로 계산하면 한 칸을 고쳐도 나머지가 따라오지 않는다)
+      const man = (k) => (isNum(h[k]) && !AUTO[h.h]?.has(k) ? h[k] : null);
+      const sc = man("score"), pt = man("putts"), og = man("ong");
+      if (isNum(h.par)) {
+        if (sc !== null && pt !== null && og === null && h.par + sc - pt >= 1) out.ong = h.par + sc - pt;
+        else if (og !== null && pt !== null && sc === null && og + pt - h.par >= -3 && og + pt - h.par <= 8) out.score = og + pt - h.par;
+        else if (sc !== null && og !== null && pt === null && h.par + sc - og >= 0 && h.par + sc - og <= 5) out.putts = h.par + sc - og;
+      }
+      const e = { ...h, ...out };   // 이번에 계산한 값까지 넣은 홀(GIR·숏게임·벌타 판정용)
       if (isNum(h.par) && h.par > 3) {
         const m = String(h.miss || "").toUpperCase();
         if (["L", "R", "H", "S"].includes(m)) out.fw = 0;
         else if (m === "-") out.fw = 1;
         if (h.fw === 1 && !AUTO[h.h]?.has("fw")) out.miss = "-";
       }
-      const ongManual = isNum(h.ong) && !AUTO[h.h]?.has("ong");
-      const g = S.holeGir({ ...h, ong: ongManual ? h.ong : out.ong });
+      const g = S.holeGir(e);
       if (g === 1) { out.gmiss = "-"; out.sg = null; }
-      if (g === 0 && isNum(h.putts)) out.sg = h.putts <= 1 || (isNum(h.fp) && h.fp > 0 && h.fp <= 2) ? 1 : 0;
-      if (isNum(h.score)) out.pen = 0;
+      if (g === 0 && isNum(e.putts)) out.sg = e.putts <= 1 || (isNum(h.fp) && h.fp > 0 && h.fp <= 2) ? 1 : 0;
+      if (isNum(e.score)) out.pen = 0;
       return out;   // null = 비워야 함(해당 없음)
     }
     function autoFill(n) {
@@ -711,6 +719,11 @@
       return changed;
     }
     // 불러온 기록: 저장된 값이 계산값과 같으면 자동 칸으로 본다(나중에 Score를 고치면 같이 바뀌도록)
+    // 세 칸이 모두 있고 맞으면 예전처럼 온그린 타수를 자동 칸으로 둔다(스코어·퍼트를 고치면 따라 바뀜)
+    for (const n of Object.keys(H)) {
+      const x = H[n];
+      if (isNum(x.par) && isNum(x.score) && isNum(x.putts) && isNum(x.ong) && x.par + x.score === x.ong + x.putts) AUTO[n].add("ong");
+    }
     for (const n of Object.keys(H)) {
       const d = derive(H[n]);
       for (const [k, v] of Object.entries(d)) if (v !== null && H[n][k] === v) AUTO[n].add(k);
@@ -811,7 +824,8 @@
           if (k === "par" && H[cur].par === 3) for (const t of TEE_ONLY) { delete H[cur][t]; AUTO[cur].delete(t); }
           const filled = autoFill(cur);
           saveDraft();
-          drawAll(k === "par" || filled);
+          // 스코어·퍼트·온그린 타수는 서로 계산하므로 고칠 때마다 카드를 다시 그려 「자동」 표시와 ≠ 경고를 맞춘다
+          drawAll(k === "par" || filled || ["score", "putts", "ong"].includes(k));
         });
       });
     }
