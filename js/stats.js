@@ -19,7 +19,7 @@ const GolfStats = (() => {
       pph: { label: "퍼팅", metric: "홀당 퍼트", zero: 2.4, full: 1.75 },
       p3: { label: "3퍼트", metric: "18홀당 3퍼트 수", zero: 4, full: 1 },
       fp: { label: "거리감", metric: "1st 퍼트 거리(m)", zero: 15, full: 5 },
-      crisis: { label: "위기관리", metric: "18홀당 벌타+더블+ 초과타", zero: 12, full: 0 },
+      crisis: { label: "위기관리", metric: "18홀당 벌타 + 보기 넘긴 타수", zero: 12, full: 0 },
     },
     radarTarget: 70,
     // 육각형에 없는 지표(타수 계열·벌타)도 실력 진단 표에 0~100점을 보여 주려고 따로 둔 기준(육각형 모양은 그대로 7영역)
@@ -145,7 +145,7 @@ const GolfStats = (() => {
     };
     const best = fulls.length ? fulls.reduce((b, r) => (r.strokes < b.strokes ? r : b)) : null;
     const d5 = dets.slice(0, 5);
-    const loss = [["벌타", "pen"], ["3퍼트 손실타", "p3loss"], ["스크램블 실패(홀)", "scrFail"], ["더블+ 초과타", "blow"]]
+    const loss = [["벌타", "pen"], ["3퍼트 손실타", "p3loss"], ["스크램블 실패(홀)", "scrFail"], ["보기 넘긴 타수(더블+)", "blow"]]
       .map(([label, k]) => ({ label, all: avg(pick(dets, k)), r5: avg(pick(d5, k)) }));
     return {
       rs, recent, fulls, dets, best, metric, loss,

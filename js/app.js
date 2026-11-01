@@ -111,6 +111,7 @@
       ls.set(KEY_CACHE, rounds);
       const s = await G.load(G.SETTINGS);
       settings = s.data ? deepMerge(structuredClone(S.DEFAULT_SETTINGS), s.data) : structuredClone(S.DEFAULT_SETTINGS);
+      fixRadarLabels();
       await loadCourses();
       if (!quiet) toast("휴대폰에 저장된 기록을 다시 읽었습니다.");
     } catch (e) {
@@ -131,6 +132,10 @@
     if (Array.isArray(c)) courseDB = c;
     else { const local = await get(COURSES_PATH); if (Array.isArray(local)) courseDB = local; }
     courseReqs = Array.isArray(q) ? q : [];
+  }
+  // 육각형 영역 이름·지표 설명은 사용자가 고치는 값이 아니라서, 예전에 저장된 설정에 옛 이름이 남아 있어도 지금 이름으로 맞춘다
+  function fixRadarLabels() {
+    for (const [k, d] of Object.entries(S.DEFAULT_SETTINGS.radar)) if (settings.radar[k]) Object.assign(settings.radar[k], { label: d.label, metric: d.metric });
   }
   function deepMerge(a, b) {
     for (const k of Object.keys(b || {})) {
@@ -479,7 +484,7 @@
     { label: "3퍼트 수", t: "p3", r: "p3", low: true },
     { label: "1st 퍼트 거리", r: "fp", low: true },
     { label: "벌타", t: "pen", low: true },
-    { label: "위기관리", sub: "벌타+더블+ 초과타", r: "crisis", low: true },
+    { label: "위기관리", sub: "벌타 + 보기 넘긴 타수", r: "crisis", low: true },
   ];
   // 설정 표에서 육각형 기준을 목표와 같은 단위로 보여 준다: 비율은 %, 홀당 퍼트는 라운드당
   const PCT = new Set(["fw", "gir", "scr"]);
@@ -1356,7 +1361,7 @@
       <div class="kpis">
         ${kpi("총타수", s.strokes ?? "-", s.full ? `전반 ${s.front} / 후반 ${s.back}` : `${s.holes}홀 입력`)}
         ${kpi("오버파", sgn(s.over, 0), `버디+ ${s.birdie} / 파 ${s.parn} / 보기 ${s.bogey}`)}
-        ${kpi("더블+", s.dbl, `초과타 ${s.blow}`)}
+        ${kpi("더블+", s.dbl, `보기 넘긴 타수 ${s.blow}`)}
         ${isNum(s.drive) ? kpi("드라이버 평균", Math.round(s.drive) + "m", `최장 ${s.driveMax}m · ${s.driveN}홀`) : ""}
         ${s.detail ? kpi("퍼트", s.putts, `3퍼트 ${s.p3} / 1퍼트 ${s.onep}`) + kpi("GIR", pct(s.girp), `스크램블 ${pct(s.scrp)}`) + kpi("FW", pct(s.fwp), `벌타 ${s.pen ?? "-"}`) : ""}
       </div>
