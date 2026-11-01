@@ -227,7 +227,7 @@
     const list = courseReqs.slice().reverse().slice(0, limit);
     if (!list.length) return "";
     return `<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th class="l">요청</th><th>상태</th><th class="l">결과</th></tr></thead><tbody>${list.map((q) => `<tr>
-      <td class="l"><b>${esc(q.name)}</b> <span class="muted">${esc(q.courses.join("·"))} · ${esc(q.tee)}</span><br><span class="muted">${esc(q.requested || "")}</span></td>
+      <td class="l">${q.status === "완료" && findCourse(q.club || q.name) ? `<a href="#/course/${encodeURIComponent(findCourse(q.club || q.name).name)}"><b>${esc(q.name)}</b></a>` : `<b>${esc(q.name)}</b>`} <span class="muted">${esc(q.courses.join("·"))} · ${esc(q.tee)}</span><br><span class="muted">${esc(q.requested || "")}</span></td>
       <td><span class="pill ${REQ_TONE[q.status] || ""}">${esc(q.status)}</span></td><td class="l wrap">${esc(q.message || (q.status === "요청" ? "대기 중 — Claude Code에서 「골프장 요청 처리해줘」라고 하면 등록됩니다" : ""))}</td></tr>`).join("")}</tbody></table></div>`;
   }
   function courseRequestForm(box, pre = {}, onDone = () => {}) {
@@ -248,8 +248,12 @@
     document.getElementById("rqClose").onclick = () => (box.innerHTML = "");
     document.getElementById("rqReload").onclick = async () => { await loadCourses(); courseRequestForm(box, pre, onDone); onDone(); toast("골프장 정보와 요청 현황을 다시 읽었습니다."); };
     document.getElementById("rqSend").onclick = async (e) => {
-      const q = { id: "q" + Date.now().toString(36), name: v("rqName"), url: v("rqUrl"), courses: v("rqCourses").split(/[,，·]/).map((x) => x.trim()).filter(Boolean), tee: v("rqTee"), memo: v("rqMemo"), status: "요청", requested: new Date().toLocaleString("ko-KR", { hour12: false }).slice(0, -3) };
+      const q = { id: "q" + Date.now().toString(36), name: v("rqName"), url: v("rqUrl"), courses: v("rqCourses").split(/[,，·]/).map((x) => x.trim()).filter(Boolean), tee: v("rqTee"), memo: v("rqMemo"), status: "요청", requested: new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 16).replace("T", " ") };
       if (!q.name || !/^https?:\/\//.test(q.url) || !q.courses.length || !q.tee) return toast("골프장 이름, 홈페이지 주소(https://…), 코스, 티를 적어 주세요.", 4000);
+      // 이미 등록됐거나 대기 중인 같은 요청은 다시 쌓지 않는다
+      const same = (x) => normName(x.name) === normName(q.name) && x.courses.join() === q.courses.join() && teeKey(x.tee) === teeKey(q.tee);
+      if (q.courses.every((c) => courseHoles({ course: q.name, front: c, back: c, tee: q.tee }))) return toast(`${q.name} ${q.courses.join("·")} ${q.tee} 정보는 이미 등록되어 있습니다. 라운드 목록 → 등록된 골프장에서 볼 수 있습니다.`, 5000);
+      if (courseReqs.some((x) => x.status === "요청" && same(x))) return toast("같은 요청이 이미 대기 중입니다.", 4000);
       e.target.disabled = true; e.target.textContent = "보내는 중…";
       try {
         const { data } = await G.update((list) => [...(Array.isArray(list) ? list : []), q], `골프장 정보 요청: ${q.name} ${q.courses.join("·")} ${q.tee}`, REQS_PATH);
@@ -258,6 +262,59 @@
         courseRequestForm(box, pre, onDone);
         onDone();
       } catch (err) { toast(err.message, 6000); e.target.disabled = false; e.target.textContent = "요청 저장"; }
+    };
+  }
+
+  // ───────────── 등록된 골프장 목록 · 골프장별 공략 ─────────────
+  // 라운드 날짜가 없어도 등록된 골프장의 홀별 공략을 볼 수 있게 한다(라운드 목록 위, 설정)
+  const clubTotal = (c) => c.courses.map((cs) => { const t = Object.values(cs.tees || {})[0]; return t ? S.sum(t.holes.map((h) => h.dist || 0)) : 0; });
+  function clubTable() {
+    if (!courseDB.length) return "";
+    return `<h3>등록된 골프장 <span class="muted">${courseDB.length}곳 · 누르면 홀별 공략 · 요청이 완료되면 여기에 추가</span></h3>
+      <div class="tbl-wrap"><table><thead><tr><th class="l">골프장</th><th class="l">코스 · 티</th><th>거리</th><th>등록</th></tr></thead>
+        <tbody>${courseDB.map((c) => `<tr class="click" data-club="${esc(c.name)}"><td class="l"><b>${esc(c.name)}</b>${c.region ? ` <span class="muted">📍${esc(c.region)}</span>` : ""}</td>
+          <td class="l">${c.courses.map((cs) => `${esc(cs.name)}${cs.holes18 ? "(18홀)" : ""} <span class="muted">${esc(Object.keys(cs.tees || {}).join("·"))}</span>`).join(" · ")}</td>
+          <td>${clubTotal(c).map((m) => (m ? m + "m" : "-")).join(" · ")}</td><td class="muted">${dot(c.updated || "")}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  function bindClubLinks() {
+    app.querySelectorAll("tr[data-club]").forEach((tr) => (tr.onclick = () => (location.hash = "#/course/" + encodeURIComponent(tr.dataset.club))));
+  }
+  function courseView(name) {
+    const club = findCourse(name);
+    if (!club) { app.innerHTML = `<p>「${esc(name)}」 골프장 정보가 없습니다. <a href="#/rounds">목록으로</a></p>`; return; }
+    const cs = club.courses;
+    const st = courseView.st && courseView.st.club === club.name ? courseView.st : (() => {
+      const full = cs.find((x) => x.holes18);
+      const f = full || cs[0], b = full || cs[1] || cs[0];
+      return { club: club.name, front: f.name, back: b.name, tee: Object.keys(f.tees || {})[0] || "White" };
+    })();
+    courseView.st = st;
+    const tees = [...new Set(cs.flatMap((x) => Object.keys(x.tees || {})))];
+    const r = { course: club.name, front: st.front, back: st.back, tee: st.tee, holes: [] };
+    const opt = (v) => cs.map((x) => `<option ${x.name === v ? "selected" : ""}>${esc(x.name)}</option>`).join("");
+    const plans = rounds.filter((x) => x.planned && normName(x.course) === normName(club.name)).sort((a, b) => (a.date < b.date ? -1 : 1));
+    app.innerHTML = `
+      <div class="row" style="justify-content:space-between"><h2>${esc(club.name)} <span class="muted">${club.region ? "📍" + esc(club.region) + " · " : ""}${cs.map((x) => esc(x.name)).join("·")} 코스</span></h2>
+        <div class="row">${club.url ? `<a class="btn ghost" href="${esc(club.url)}" target="_blank" rel="noopener">홈페이지</a>` : ""}<button class="btn" id="cvPlan" type="button">이 코스로 라운드 입력</button></div></div>
+      ${plans.length ? `<div class="notice">예정 라운드: ${plans.map((x) => `<a href="#/round/${encodeURIComponent(x.id)}">${dot(x.date)} ${esc([x.front, x.back].filter(Boolean).join("·"))} ${esc(x.tee || "")}</a>`).join(" · ")}</div>` : ""}
+      <div class="card" style="margin-top:10px"><div class="form">
+        <label class="f">전반 코스<select id="cvFront">${opt(st.front)}</select></label>
+        <label class="f">후반 코스<select id="cvBack">${opt(st.back)}</select></label>
+        <label class="f">티<select id="cvTee">${tees.map((t) => `<option ${t === st.tee ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      </div></div>
+      ${courseGuide(r) || `<p class="muted">이 조합의 코스 정보가 없습니다.</p>`}
+      <p class="legend-note">${esc(club.source || "")}</p>
+      <p><a href="#/rounds">← 라운드 목록</a></p>`;
+    bindHoleMaps(r);
+    for (const [id, k] of [["cvFront", "front"], ["cvBack", "back"], ["cvTee", "tee"]]) document.getElementById(id).onchange = (e) => { st[k] = e.target.value; courseView(name); };
+    // 고른 코스·티로 입력 화면을 미리 채워 연다(날짜만 고르고 저장하면 예정 라운드)
+    document.getElementById("cvPlan").onclick = () => {
+      const CH = courseHoles(r), old = ls.get(KEY_DRAFT + ":new");
+      // 입력 중이던 새 라운드(스코어가 있는 것)는 물어보고 덮어쓴다
+      if (old && (old.holes || []).some((h) => isNum(h.score)) && !confirm("입력 중인 새 라운드가 있습니다. 이 골프장 정보로 바꿀까요?")) return;
+      ls.set(KEY_DRAFT + ":new", { date: new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10), course: club.name, front: st.front, back: st.back, tee: st.tee, region: club.region || "", memo: "",
+        holes: (CH?.holes || []).map((h) => Object.fromEntries(Object.entries({ h: h.h, par: h.par, hcp: h.hcp, dist: h.dist }).filter(([, v]) => v !== undefined && v !== null))) });
+      location.hash = "#/register/input";
     };
   }
 
@@ -363,9 +420,9 @@
     // 예전 주소(#/stats 등)도 새 메뉴의 하위 탭으로 연다
     const OLD = { stats: ["analysis", "score"], holes: ["analysis", "holes"], detail: ["analysis", "shots"], input: ["register", "input"], import: ["register", "paste"] };
     const [grp, sub] = OLD[tab] || (SUB[tab] ? [tab, arg] : [null, null]);
-    const active = tab === "round" || tab === "edit" ? "rounds" : grp || tab;
+    const active = tab === "round" || tab === "edit" || tab === "course" ? "rounds" : grp || tab;
     document.querySelectorAll("#tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === active));
-    const views = { dashboard, input: () => inputView(null), edit: () => inputView(decodeURIComponent(arg || "")), rounds: roundsView, round: () => roundView(decodeURIComponent(arg || "")), stats: statsView, insights: insightsView, holes: holesView, detail: detailView, import: importView, guide: guideView, settings: settingsView, review: reviewView };
+    const views = { dashboard, input: () => inputView(null), edit: () => inputView(decodeURIComponent(arg || "")), rounds: roundsView, round: () => roundView(decodeURIComponent(arg || "")), stats: statsView, insights: insightsView, holes: holesView, detail: detailView, import: importView, guide: guideView, settings: settingsView, review: reviewView, course: () => courseView(decodeURIComponent(arg || "")) };
     const nav = document.getElementById("subnav");
     if (grp) {
       const list = SUB[grp], it = list.find((x) => x[0] === sub) || list[0];
@@ -439,8 +496,8 @@
   function upcomingBox() {
     const up = rounds.filter((r) => r.planned && dday(r.date) >= 0).sort((a, b) => (a.date < b.date ? -1 : 1));
     if (!up.length) return "";
-    return `<div class="card upcoming">${up.map((r) => { const d = dday(r.date), CH = courseHoles(r); return `<div class="row" style="justify-content:space-between">
-      <div>⛳ <b>다가오는 라운드</b> <span class="pill ${d <= 3 ? "ng" : ""}">${d === 0 ? "오늘" : "D-" + d}</span><br>
+    return `<div class="card upcoming"><div class="mt0" style="margin-bottom:8px">⛳ <b>다가오는 라운드</b> <span class="muted">${up.length}개</span></div>${up.map((r) => { const d = dday(r.date), CH = courseHoles(r); return `<div class="row" style="justify-content:space-between">
+      <div><span class="pill ${d <= 3 ? "ng" : ""}">${d === 0 ? "오늘" : "D-" + d}</span>
         <b>${dot(r.date)}(${DOW[new Date(r.date + "T00:00:00").getDay()]})</b> ${esc(r.course)} <span class="muted">${esc([r.front, r.back].filter(Boolean).join("·"))}${r.tee ? " · " + esc(r.tee) : ""}${CH ? ` · ${CH.holes.reduce((a, h) => a + (h.dist || 0), 0)}m` : ""}</span></div>
       <a class="btn" href="#/round/${encodeURIComponent(r.id)}">홀별 공략 보기</a></div>`; }).join("<hr>")}</div>`;
   }
@@ -1257,6 +1314,7 @@
       <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th class="l">골프장</th><th class="l">코스 · 티</th><th>Par</th><th>거리</th><th></th></tr></thead>
         <tbody>${plans.map((r) => { const d = dday(r.date), par = S.sum((r.holes || []).filter((h) => isNum(h.par)).map((h) => h.par)), m = S.sum((r.holes || []).filter((h) => isNum(h.dist)).map((h) => h.dist));
           return `<tr class="click" data-id="${esc(r.id)}"><td>${dot(r.date)}</td><td class="l">${esc(r.course)}</td><td class="l">${esc([r.front, r.back].filter(Boolean).join("·"))} ${esc(r.tee || "")}</td><td>${par || "-"}</td><td>${m ? m + "m" : "-"}</td><td><span class="pill ${d >= 0 && d <= 3 ? "ng" : ""}">${d > 0 ? "D-" + d : d === 0 ? "오늘" : "지남"}</span></td></tr>`; }).join("")}</tbody></table></div>` : ""}
+      ${clubTable()}
       <div class="row" style="justify-content:space-between"><h2>라운드 목록 <span class="muted">${list.length}회</span></h2><a class="btn" href="#/input">+ 새 라운드</a></div>
       <div class="tbl-wrap"><table>
         <thead><tr><th>날짜</th><th class="l">골프장</th><th>홀</th><th>총타수</th><th>오버</th><th>전반</th><th>후반</th><th>퍼트</th><th>GIR</th><th>FW</th><th>드라이버</th><th>더블+</th><th>벌타</th></tr></thead>
@@ -1266,6 +1324,7 @@
         }).join("")}</tbody>
       </table></div>`;
     app.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", () => (location.hash = "#/round/" + encodeURIComponent(tr.dataset.id))));
+    bindClubLinks();
   }
   function roundView(id) {
     const r = rounds.find((x) => x.id === id);
@@ -2047,7 +2106,7 @@
       <div class="row" style="margin-top:10px"><button class="btn" id="bSaveSet" type="button" ${G.canWrite() ? "" : "disabled"}>기준값 저장</button><button class="btn ghost" id="bResetSet" type="button">기본값 불러오기</button></div>
 
       <h2>골프장 정보 <span class="muted">라운드 전 등록·홀별 공략</span></h2>
-      <div class="card"><p class="mt0">등록된 골프장: ${courseChoices().length ? courseChoices().map((x) => `<span class="pill">${esc(x)}</span>`).join(" ") : "없음"}</p>
+      <div class="card"><p class="mt0">등록된 골프장(누르면 홀별 공략): ${courseDB.length ? courseDB.map((c) => `<a class="pill" href="#/course/${encodeURIComponent(c.name)}">${esc(c.name)} · ${esc(c.courses.map((x) => x.name).join("·"))}</a>`).join(" ") : "없음"}</p>
         <div class="row"><button class="btn ghost" id="bReqOpen" type="button">🔎 새 골프장 정보 요청</button></div><div id="setReqBox"></div>${reqStatusList()}</div>
 
       <h2>내 클럽 거리 <span class="muted">평균 거리(m), 굴러간 거리 포함</span></h2>
