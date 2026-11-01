@@ -1,6 +1,6 @@
 # My Golf Lounge — 휴대폰 저장판 (golf-lounge-hp)
 
-[My Golf Lounge](https://github.com/supok00/golf-lounge) v1.1과 같은 화면·기능을 쓰되, **기록을 휴대폰 안에 저장**하는 판입니다. GitHub 저장소·토큰을 쓰지 않습니다.
+[My Golf Lounge](https://github.com/supok00/golf-lounge) v1.2와 같은 화면·기능을 쓰되, **기록을 휴대폰 안에 저장**하는 판입니다. GitHub 저장소·토큰을 쓰지 않습니다.
 
 **설치 주소**: https://supok00.github.io/golf-lounge-hp/ (이 저장소에는 앱 코드만 있고 기록은 없습니다)
 
@@ -34,4 +34,6 @@
 
 - `js/localstore.js`: 휴대폰 저장소(IndexedDB). 화면 코드가 그대로 쓰도록 golf-lounge의 저장소 함수와 같은 이름(`GitHubStore.load/update/putFile…`)을 씁니다.
 - `js/vendor/chart.umd.min.js`: 차트 라이브러리를 앱 안에 두어 인터넷 없이도 그래프가 나옵니다.
-- 나머지 화면 파일은 golf-lounge v1.1과 같습니다. 버전 1.1, 배포 번호 `hp-…`.
+- `data/courses.json`, `data/courses/`: 골프장 정보(코스별 Par·핸디캡·거리·공략·홀 그림). 기록이 아니라 앱과 함께 배포되는 자료로, 웹판과 같은 파일을 복사해 둡니다. 골프장 정보는 앱이 미리 받아 두고(오프라인에서도 홀별 공략), 홀 그림은 한 번 열면 저장됩니다.
+- 나머지 화면 파일은 golf-lounge v1.2와 같습니다. 버전 1.2, 배포 번호 `hp-…`. 웹판 변경은 `tools/sync-from-web.sh`로 옮깁니다(골프장 정보 파일은 `data/` 복사).
+- 새 버전은 앱을 열거나 다시 돌아올 때 자동 적용됩니다(라운드 입력·설정 화면에서는 「새 버전이 있습니다 — 지금 적용」 줄).

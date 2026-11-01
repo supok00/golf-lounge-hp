@@ -319,3 +319,27 @@ table.hgrid th, table.hgrid td { padding: 4px 1px; }
 table.hgrid select { width: 2.35em; padding: 6px 0; font-size: 15px; text-align: center; text-align-last: center; -webkit-appearance: none; appearance: none; }   /* 동반자 오버 타수 고르기 — 9칸이 휴대폰 폭에 들어가게 화살표 없이 */
 table.hgrid input[list] { width: 2.35em; padding: 6px 0; font-size: 15px; text-align: center; }
 table.hgrid input[list]::-webkit-calendar-picker-indicator { display: none !important; }
+
+/* 홀별 야디지·공략 카드 */
+.hguide { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.hg { background: #fff; border: 1px solid #e6eaf2; border-radius: 12px; padding: 10px 12px; }
+.hg-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.hg-n { font-size: 20px; min-width: 26px; }
+.hg-yd { margin-left: auto; font-size: 15px; }
+.hg-plan, .hg-tip { margin-top: 6px; font-size: 13px; line-height: 1.5; }
+.hg-tip { color: #3b4458; }
+.hg-map { margin-top: 6px; font-size: 13px; }
+.hg[data-gh] { cursor: pointer; }
+.hg.cur { border: 2px solid #7aa7f7; background: #f5f9ff; }
+.upcoming { margin-bottom: 10px; border: 1px solid #cfe3ff; background: #f3f8ff; }
+.upcoming hr { border: 0; border-top: 1px solid #dde8f7; margin: 10px 0; }
+
+/* 홈 실력 진단 표: 휴대폰에서는 판정·전체 평균 열을 숨기고 칸을 좁힌다(최근 5R 값 색이 판정과 같음) */
+.diag .dir-mark { display: none; }
+@media (max-width: 600px) {
+  .diag th, .diag td { padding: 7px 5px; font-size: 13px; }
+  .diag th { white-space: normal; }
+  .diag .c-judge, .diag .c-all, .diag .dir-txt, .diag .pill { display: none; }
+  .diag .dir-mark { display: inline; }
+  .diag .dir-sub { font-size: 11.5px; }
+}

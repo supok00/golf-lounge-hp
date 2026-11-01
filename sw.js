@@ -4,7 +4,8 @@
  * 앱이 「새 버전이 있습니다 — 지금 적용」 줄을 띄워 바로 바꿀 수 있게 한다(js/app.js). */
 importScripts("js/version.js");   // APP_VERSION — 버전을 올리면 캐시 이름이 바뀌어 새 버전이 설치된다
 const CACHE = "hp-shell-" + APP_VERSION + "-" + (typeof APP_BUILD !== "undefined" ? APP_BUILD : "");   // 버전이 같아도 배포 번호가 바뀌면 새로 설치
-const SHELL = ["./", "index.html", "js/version.js", "css/style.css", "js/localstore.js", "js/vendor/chart.umd.min.js", "js/stats.js", "js/clubs.js", "js/korea-map.js", "js/regions.js", "js/smartscore.js", "js/companions.js", "js/guide.js", "js/app.js", "manifest.webmanifest", "icons/icon-192.png"];
+const SHELL = ["./", "index.html", "js/version.js", "css/style.css", "js/localstore.js", "js/vendor/chart.umd.min.js", "js/stats.js", "js/clubs.js", "js/korea-map.js", "js/regions.js", "js/smartscore.js", "js/companions.js", "js/guide.js", "js/app.js", "manifest.webmanifest", "icons/icon-192.png",
+  "data/courses.json"];   // 골프장 정보도 미리 받아 두어 필드(오프라인)에서 홀별 공략이 보이게. 홀 그림은 한 번 열면 저장됨
 
 self.addEventListener("install", (e) => {
   // 새 버전 파일은 브라우저 HTTP 캐시를 거치지 않고 받는다(오래된 파일이 새 캐시에 들어가지 않게)
