@@ -15,6 +15,8 @@
   let loadedAt = null;
   let charts = [];
   let courseDB = [];   // data/courses.json: 골프장 홈페이지에서 옮긴 코스별 Par·핸디캡·거리·공략(라운드 전 등록용)
+  let courseReqs = []; // data/course-requests.json: 앱에서 보낸 「골프장 정보 요청」 — GitHub Actions(tools/course_fetch.py)가 처리
+  const COURSES_PATH = "data/courses.json", REQS_PATH = "data/course-requests.json";
 
   // ───────────── 유틸 ─────────────
   const isNum = S.isNum;
@@ -109,9 +111,7 @@
       ls.set(KEY_CACHE, rounds);
       const s = await G.load(G.SETTINGS);
       settings = s.data ? deepMerge(structuredClone(S.DEFAULT_SETTINGS), s.data) : structuredClone(S.DEFAULT_SETTINGS);
-      // 골프장 정보(코스별 Par·거리·공략·홀 그림)는 앱과 함께 배포되는 파일이라 그대로 읽는다(기록이 아님)
-      const c = await fetch(`data/courses.json?t=${Date.now()}`, { cache: "no-store" }).catch(() => null);
-      if (c && c.ok) courseDB = await c.json().catch(() => []);
+      await loadCourses();
       if (!quiet) toast("휴대폰에 저장된 기록을 다시 읽었습니다.");
     } catch (e) {
       const cached = ls.get(KEY_CACHE);
@@ -119,6 +119,18 @@
       toast("데이터를 불러오지 못했습니다: " + e.message, 5000);
     }
     renderStatus();
+  }
+  // 골프장 정보·요청 현황. 자동 등록이 커밋한 직후에도 보이도록 배포본 대신 GitHub에서 읽는다(실패하면 배포본)
+  // 휴대폰판: 골프장 정보는 웹판 저장소(golf-lounge)에서 읽는다 — 웹판에서 요청해 자동 등록된 골프장이 여기도 바로 나오게.
+  // 인터넷이 없으면 앱에 넣어 둔 사본(data/courses.json)을 쓴다. 기록은 여전히 휴대폰 안에만 있다.
+  const WEB_RAW = "https://raw.githubusercontent.com/supok00/golf-lounge/main/";
+  const WEB_SITE = "https://supok00.github.io/golf-lounge/";
+  async function loadCourses() {
+    const get = (u) => fetch(`${u}?t=${Date.now()}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const [c, q] = await Promise.all([get(WEB_RAW + COURSES_PATH), get(WEB_RAW + REQS_PATH)]);
+    if (Array.isArray(c)) courseDB = c;
+    else { const local = await get(COURSES_PATH); if (Array.isArray(local)) courseDB = local; }
+    courseReqs = Array.isArray(q) ? q : [];
   }
   function deepMerge(a, b) {
     for (const k of Object.keys(b || {})) {
@@ -199,9 +211,52 @@
       <p class="legend-note">「내 공략」은 <a href="#/settings">내 클럽 거리</a>로 계산한 추정입니다(티샷은 드라이버 평균 거리 가정${Clubs.isDefault(settings) ? ", 지금은 예시 클럽 거리" : ""}). 「📍」는 골프장 홈페이지 코스 안내를 요약한 공략이고, 「🗺 홀 그림」은 홈페이지 홀맵(해저드·벙커까지 거리, 고저차 포함 · 그림 속 숫자는 야드)입니다. 거리는 모두 미터(홈페이지 야드 × 0.9144)입니다.${CH?.club.url ? ` 출처: <a href="${esc(CH.club.url)}" target="_blank" rel="noopener">${esc(CH.club.name)} 홈페이지</a> (${esc(CH.club.updated || "")})` : ""}</p>`;
   }
 
+  const courseAsset = (path) => WEB_RAW + path;   // 홀 그림도 웹판 저장소 원본(서비스 워커가 한 번 본 그림은 저장)
   function bindHoleMaps(r, root = app) {
     const maps = (courseHoles(r)?.holes || []).filter((h) => h.map);
-    root.querySelectorAll("[data-map]").forEach((b) => (b.onclick = () => openViewer(maps.map((h) => h.map), Math.max(0, maps.findIndex((h) => h.h === Number(b.dataset.map))))));
+    root.querySelectorAll("[data-map]").forEach((b) => (b.onclick = () => openViewer(maps.map((h) => courseAsset(h.map)), Math.max(0, maps.findIndex((h) => h.h === Number(b.dataset.map))))));
+  }
+
+  /* 골프장 정보 요청: 이름·홈페이지·코스·티를 data/course-requests.json에 남기면 GitHub Actions가 홈페이지를 읽어 등록한다(보통 3~10분).
+   * pre: 입력 화면에서 적은 값으로 미리 채움. onDone: 요청을 저장한 뒤 다시 그리기 */
+  const REQ_TONE = { 요청: "", "처리 중": "", 완료: "ok", 실패: "ng" };
+  function reqStatusList(limit = 6) {
+    const list = courseReqs.slice().reverse().slice(0, limit);
+    if (!list.length) return "";
+    return `<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th class="l">요청</th><th>상태</th><th class="l">결과</th></tr></thead><tbody>${list.map((q) => `<tr>
+      <td class="l"><b>${esc(q.name)}</b> <span class="muted">${esc(q.courses.join("·"))} · ${esc(q.tee)}</span><br><span class="muted">${esc(q.requested || "")}</span></td>
+      <td><span class="pill ${REQ_TONE[q.status] || ""}">${esc(q.status)}</span></td><td class="l wrap">${esc(q.message || (q.status === "요청" ? "GitHub에서 처리 중입니다(보통 3~10분). 「새로 고침」으로 확인" : ""))}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  function courseRequestForm(box, pre = {}, onDone = () => {}) {
+    const pending = courseReqs.some((q) => q.status === "요청");
+    box.innerHTML = `<div class="card" style="margin-top:10px"><h3 class="mt0">🔎 새 골프장 정보 요청</h3>
+      <p class="legend-note mt0">골프장 홈페이지 주소를 주면 GitHub에서 Claude가 홈페이지(표·홀 그림)를 읽어 Par·핸디캡·거리(m)·공략·홀 그림을 등록합니다. 보통 3~10분 걸리고, 끝나면 「골프장 정보 불러오기」에 나타납니다. 투 그린이면 좌그린, 같은 색 티가 여러 개면 가장 먼 티 기준입니다.</p>
+      <div class="form">
+        <label class="f">골프장 이름<input id="rqName" value="${esc(pre.course || "")}" placeholder="예: 아시아나CC"></label>
+        <label class="f wide">홈페이지 주소<input id="rqUrl" type="url" value="${esc(findCourse(pre.course)?.url || "")}" placeholder="https://www.골프장.co.kr/"></label>
+        <label class="f">코스(쉼표로 여러 개)<input id="rqCourses" value="${esc([...new Set([pre.front, pre.back].filter(Boolean))].join(", "))}" placeholder="예: 동 또는 레이크, 밸리"></label>
+        <label class="f">티<input id="rqTee" value="${esc(pre.tee || "White")}" list="teeList"></label>
+        <label class="f wide">메모(선택)<input id="rqMemo" placeholder="예: 홀 안내는 코스 소개 → 홀 공략 메뉴"></label>
+      </div>
+      <p class="notice">휴대폰 저장판은 GitHub에 연결하지 않아 여기서 요청을 보낼 수 없습니다. <a href="${WEB_SITE}#/settings" target="_blank" rel="noopener"><b>웹판 설정 → 골프장 정보</b></a>에서 요청하면, 등록된 골프장은 이 앱의 「골프장 정보 불러오기」에도 나옵니다(「새로 고침」).</p>
+      <div class="row" style="margin-top:10px"><button class="btn" id="rqSend" type="button" disabled hidden>요청 보내기</button><button class="btn ghost" id="rqReload" type="button">새로 고침</button><button class="link" id="rqClose" type="button">닫기</button></div>
+      <p class="legend-note">처음 한 번 저장소 Settings → Secrets and variables → Actions에 <code>ANTHROPIC_API_KEY</code>를 넣어야 동작합니다(키는 앱·저장소 파일에 넣지 않음). 골프장 1곳당 Claude API 사용료가 듭니다.${pending ? " <b>처리 중인 요청이 있습니다.</b>" : ""}</p>
+      ${reqStatusList()}</div>`;
+    const v = (id) => document.getElementById(id).value.trim();
+    document.getElementById("rqClose").onclick = () => (box.innerHTML = "");
+    document.getElementById("rqReload").onclick = async () => { await loadCourses(); courseRequestForm(box, pre, onDone); onDone(); toast("골프장 정보와 요청 현황을 다시 읽었습니다."); };
+    document.getElementById("rqSend").onclick = async (e) => {
+      const q = { id: "q" + Date.now().toString(36), name: v("rqName"), url: v("rqUrl"), courses: v("rqCourses").split(/[,，·]/).map((x) => x.trim()).filter(Boolean), tee: v("rqTee"), memo: v("rqMemo"), status: "요청", requested: new Date().toLocaleString("ko-KR", { hour12: false }).slice(0, -3) };
+      if (!q.name || !/^https?:\/\//.test(q.url) || !q.courses.length || !q.tee) return toast("골프장 이름, 홈페이지 주소(https://…), 코스, 티를 적어 주세요.", 4000);
+      e.target.disabled = true; e.target.textContent = "보내는 중…";
+      try {
+        const { data } = await G.update((list) => [...(Array.isArray(list) ? list : []), q], `골프장 정보 요청: ${q.name} ${q.courses.join("·")} ${q.tee}`, REQS_PATH);
+        courseReqs = data;
+        toast("요청을 보냈습니다. 3~10분 뒤 「새로 고침」으로 확인하세요.", 5000);
+        courseRequestForm(box, pre, onDone);
+        onDone();
+      } catch (err) { toast(err.message, 6000); e.target.disabled = false; e.target.textContent = "요청 보내기"; }
+    };
   }
 
   // ───────────── 공통 필터 (모든 분석 화면에 같은 조건) ─────────────
@@ -619,8 +674,9 @@
         </div>
         <datalist id="courseList">${courses.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
         <datalist id="teeList">${tees.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
-        <div class="row" style="margin-top:10px"><button class="btn ghost" id="bCourseDB" type="button">⛳ 골프장 정보 불러오기 (Par·핸디캡·거리·공략)</button><button class="btn ghost" id="bCourse" type="button">이전 라운드 코스 정보 불러오기</button></div>
-        <p class="legend-note">「골프장 정보」는 골프장 홈페이지에서 옮겨 둔 코스 자료입니다${courseDB.length ? ` — 지금 등록: ${esc(courseChoices().join(", "))}` : ""}. 골프장·전반/후반 코스·티를 먼저 적고 누르세요. 라운드 전에 스코어 없이 저장하면 <b>예정 라운드</b>로 등록되어 홈과 라운드 목록에서 홀별 공략을 볼 수 있습니다.</p>
+        <div class="row" style="margin-top:10px"><button class="btn ghost" id="bCourseDB" type="button">⛳ 골프장 정보 불러오기 (Par·핸디캡·거리·공략)</button><button class="btn ghost" id="bCourseReq" type="button">🔎 새 골프장 정보 요청</button><button class="btn ghost" id="bCourse" type="button">이전 라운드 코스 정보 불러오기</button></div>
+        <div id="reqBox"></div>
+        <p class="legend-note">「골프장 정보」는 골프장 홈페이지에서 옮겨 둔 코스 자료입니다${courseDB.length ? ` — 지금 등록: ${esc(courseChoices().join(", "))}` : ""}. 골프장·전반/후반 코스·티를 먼저 적고 누르세요. 없는 골프장은 「새 골프장 정보 요청」으로 홈페이지 주소를 주면 자동으로 등록됩니다. 라운드 전에 스코어 없이 저장하면 <b>예정 라운드</b>로 등록되어 홈과 라운드 목록에서 홀별 공략을 볼 수 있습니다.</p>
       </div>
 
       <div class="holenav" id="holeNav"></div>
@@ -803,9 +859,14 @@
       toast((nPar ? `Par·핸디캡: ${[...new Set(src)].join(", ")} 기록에서 불러왔습니다.` : "같은 코스명의 이전 기록이 없어 Par·핸디캡을 채우지 못했습니다.")
         + "\n" + (nDist ? `거리: 같은 티(${m.tee})로 친 기록에서 불러왔습니다.` : `거리: ${m.tee ? `같은 티(${m.tee})로 친` : "티를 적은"} 기록이 없어 비워 두었습니다. 스코어카드의 ${m.tee || "친 티"} 거리를 넣어 주세요.`), 6000);
     };
-    $("bCourseDB").onclick = () => {
-      const m = meta(), CH = courseHoles(m);
-      if (!CH) return toast(findCourse(m.course) ? `${m.course}에 「${m.front || "?"}」 코스 · 「${m.tee || "?"}」 티 정보가 없습니다. 등록된 것: ${courseChoices().join(", ")}` : `「${m.course || "골프장"}」 정보가 아직 없습니다. 등록된 골프장: ${courseChoices().join(", ") || "없음"}`, 6000);
+    $("bCourseReq").onclick = () => courseRequestForm($("reqBox"), meta(), () => { drawGuide(); drawCard(); });
+    $("bCourseDB").onclick = async () => {
+      let m = meta(), CH = courseHoles(m);
+      if (!CH) { await loadCourses(); CH = courseHoles(m); }   // 방금 자동 등록이 끝났을 수도 있다
+      if (!CH) {
+        toast(findCourse(m.course) ? `${m.course}에 「${m.front || "?"}」 코스 · 「${m.tee || "?"}」 티 정보가 없습니다. 아래에서 요청할 수 있습니다.` : `「${m.course || "골프장"}」 정보가 아직 없습니다. 아래에서 홈페이지 주소로 요청할 수 있습니다.`, 6000);
+        return courseRequestForm($("reqBox"), m, () => { drawGuide(); drawCard(); });
+      }
       for (const c of CH.holes) { for (const k of ["par", "hcp", "dist"]) if (isNum(c[k])) { H[c.h][k] = c[k]; AUTO[c.h].delete(k); } autoFill(c.h); }
       if (!$("fRegion").value && CH.club.region) $("fRegion").value = CH.club.region;
       saveDraft();
@@ -1982,6 +2043,10 @@
       <p class="legend-note">평균 타수·파 이하 홀·더블보기+·벌타의 0점·100점은 실력 진단 표의 점수에만 쓰이고 육각형 모양은 그대로입니다. 거리감·위기관리의 목표는 육각형 목표선 점수가 되는 값으로 자동 계산합니다(100점 값이나 목표선을 바꾸면 같이 바뀜). 기준값은 아마추어 핸디캡별 통계 경향을 참고한 가정값입니다(100점 ≈ 싱글~10 핸디캡, 0점 ≈ 초보). 비율은 %로, 퍼트는 라운드당으로 입력합니다(저장은 0~1·홀당 형식으로 바꿔서 함).</p>
       <div class="row" style="margin-top:10px"><button class="btn" id="bSaveSet" type="button" ${G.canWrite() ? "" : "disabled"}>기준값 저장</button><button class="btn ghost" id="bResetSet" type="button">기본값 불러오기</button></div>
 
+      <h2>골프장 정보 <span class="muted">라운드 전 등록·홀별 공략</span></h2>
+      <div class="card"><p class="mt0">등록된 골프장: ${courseChoices().length ? courseChoices().map((x) => `<span class="pill">${esc(x)}</span>`).join(" ") : "없음"}</p>
+        <div class="row"><button class="btn ghost" id="bReqOpen" type="button">🔎 새 골프장 정보 요청</button></div><div id="setReqBox"></div>${reqStatusList()}</div>
+
       <h2>내 클럽 거리 <span class="muted">평균 거리(m), 굴러간 거리 포함</span></h2>
       ${Clubs.isDefault(settings) ? `<div class="notice">지금은 <b>예시값</b>입니다. 내 평균 거리로 바꾸고 저장하세요. 연습장이나 스마트 거리측정 기록의 '평소 거리'를 넣으면 됩니다(최고 거리 아님).</div>` : ""}
       <div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>사용</th><th class="l">클럽</th><th>거리(m)</th></tr></thead>
@@ -2000,6 +2065,7 @@
       <div class="card">${APP_CHANGES.map((c) => `<h3 class="mt0">v${c.v} <span class="muted">${c.date}</span></h3><ul>${c.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
         <p class="legend-note">2026.10.25 정식판을 1.0으로 정했습니다(이전 개발 과정은 0.1~0.9). 2026.10.26 중복 정리판이 1.1, 2026.11.01 퍼트 분석·사진/동영상·라운드 전 등록판이 1.2입니다(웹판 golf-lounge와 같은 버전). 기능을 고쳐도 따로 정하기 전까지 버전은 그대로 두고, 배포 번호(${typeof APP_BUILD === "string" ? APP_BUILD : "-"})만 바뀝니다. 새 버전이 나오면 앱을 열거나 다시 돌아올 때 자동으로 적용됩니다(라운드 입력·설정 화면에서는 「새 버전이 있습니다 — 지금 적용」 줄로 알려 줌).</p></div>`;
     const $ = (s) => document.getElementById(s);
+    $("bReqOpen").onclick = () => courseRequestForm($("setReqBox"), {}, () => settingsView());
     if ($("bInstall")) $("bInstall").onclick = async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; settingsView(); };
     G.usage().then((u) => {
       const mb = (v) => (isNum(v) ? (v / 1048576).toFixed(1) + "MB" : "-");

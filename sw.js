@@ -16,7 +16,14 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== "GET" || url.origin !== location.origin) return;   // 기록 가져오기·글자 인식 등 다른 사이트 요청은 그대로
+  // 웹판 저장소의 골프장 정보·홀 그림은 필드(오프라인)에서도 보이도록 저장한다
+  const webCourse = url.hostname === "raw.githubusercontent.com" && url.pathname.startsWith("/supok00/golf-lounge/main/data/courses");
+  if (e.request.method !== "GET" || (url.origin !== location.origin && !webCourse)) return;   // 글자 인식 등 다른 사이트 요청은 그대로
+  // 골프장 정보 목록(json)은 새로 등록된 골프장이 바로 보이게 네트워크 먼저, 안 되면 저장본
+  if (webCourse && url.pathname.endsWith(".json")) {
+    e.respondWith(caches.open(CACHE).then((c) => fetch(e.request).then((res) => { if (res.ok) c.put(e.request, res.clone()); return res; }).catch(() => c.match(e.request, { ignoreSearch: true }))));
+    return;
+  }
   e.respondWith(
     caches.open(CACHE).then(async (c) => {
       const hit = await c.match(e.request, { ignoreSearch: true });
