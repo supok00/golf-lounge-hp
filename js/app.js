@@ -22,7 +22,7 @@
   const f2 = (v) => (isNum(v) ? v.toFixed(2) : "-");
   const pct = (v) => (isNum(v) ? Math.round(v * 100) + "%" : "-");
   const sgn = (v, d = 2) => (isNum(v) ? (v > 0 ? "+" : "") + v.toFixed(d) : "-");
-  const fmtT = (v, t) => (t === "%" ? pct(v) : f1(v));
+  const fmtT = (v, t) => (t === "%" ? pct(v) : t === "m" ? (isNum(v) ? v.toFixed(1) + "m" : "-") : f1(v));
   const dot = (d) => String(d || "").replaceAll("-", ".");
   const ls = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -145,31 +145,33 @@
 
   // ───────────── 공통 필터 (모든 분석 화면에 같은 조건) ─────────────
   let F = { period: "all", course: "", full: false, ...(ls.get(KEY_FILTER) || {}) };
+  if (F.period === "lastMonth") F.period = "all";   // 「지난 달」은 2026.10.31에 없앴다(기기에 남은 예전 조건)
   const iso = (d) => d.toISOString().slice(0, 10);
   function inPeriod(date) {
     const t = new Date(), p = F.period;
     if (p === "all") return true;
     if (p === "d90") return date >= iso(new Date(t - 90 * 864e5));
     if (p === "month") return date.startsWith(iso(t).slice(0, 7));
-    if (p === "lastMonth") { const m = new Date(t.getFullYear(), t.getMonth() - 1, 15); return date.startsWith(iso(m).slice(0, 7)); }
     if (p.startsWith("y")) return date.startsWith(p.slice(1));
     return true;
   }
   function frounds() {
-    return rounds.filter((r) => inPeriod(r.date || "") && (!F.course || String(r.course).includes(F.course)) && (!F.full || S.round(r).full));
+    const list = rounds.filter((r) => inPeriod(r.date || "") && (!F.course || String(r.course).includes(F.course)) && (!F.full || S.round(r).full));
+    // 「최근 라운드」: 골프장·18홀 조건에 맞는 라운드 중 가장 최근 1개만
+    return F.period === "recent" ? S.byRecent(list).slice(0, 1) : list;
   }
-  const PERIOD_LABEL = { all: "전체", d90: "최근 90일", month: "이번 달", lastMonth: "지난 달" };
+  const PERIOD_LABEL = { all: "전체", recent: "최근 라운드", d90: "최근 90일", month: "이번 달" };
   function filterBar() {
     const years = [...new Set(rounds.map((r) => String(r.date).slice(0, 4)))].sort().reverse();
     const opts = [...Object.entries(PERIOD_LABEL), ...years.map((y) => ["y" + y, y + "년"])];
-    const n = frounds().length;
+    const fr = frounds(), n = fr.length;
     return `<div class="fbar" id="fbar">
       <div class="chips">${opts.map(([v, l]) => `<button type="button" class="chip ${F.period === v ? "on" : ""}" data-p="${v}">${l}</button>`).join("")}</div>
       <div class="row">
         <input id="fCourseQ" placeholder="골프장 검색" value="${esc(F.course)}" list="fCourseList">
         <datalist id="fCourseList">${[...new Set(rounds.map((r) => r.course))].sort().map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
         <label class="row" style="gap:4px;font-size:14px"><input type="checkbox" id="fFull" ${F.full ? "checked" : ""}> 18홀만</label>
-        <span class="muted">${n}라운드${F.period !== "all" || F.course || F.full ? ` · <button class="link" id="fReset" type="button">조건 초기화</button>` : ""}</span>
+        <span class="muted">${F.period === "recent" && fr[0] ? `<b>${dot(fr[0].date)} ${esc(fr[0].course)}</b>` : n + "라운드"}${F.period !== "all" || F.course || F.full ? ` · <button class="link" id="fReset" type="button">조건 초기화</button>` : ""}</span>
       </div></div>`;
   }
   function bindFilter() {
@@ -190,7 +192,8 @@
     stats: ["스코어 유형 카드를 누르면 그 스코어가 나온 라운드가 아래에 나옵니다.", "추이 그래프는 기간이 1년 이하면 월별, 3년 이하면 분기별, 그 이상은 연도별로 묶습니다. 연도를 고르면 그해를 월별로 봅니다.", "골프장 이름을 누르면 그 골프장 라운드만 걸러 봅니다."],
     insights: ["라운드 날짜·시간으로 만든 요약입니다. 오전/오후는 티오프 시간이 있는 라운드(스마트스코어 붙여넣기 등)만 집계합니다."],
     holes: ["Par가 기록된 홀만 집계합니다."],
-    detail: ["v2 「상세분석」 7개 블록에 ⑧ 홀 길이별(실제로 친 티 거리) 분석을 더했습니다. 상세 항목을 기록한 홀만 각 표에 들어갑니다."],
+    detail: ["v2 「상세분석」 7개 블록에 ⑧ 홀 길이별(실제로 친 티 거리) 분석을 더했습니다. 상세 항목을 기록한 홀만 각 표에 들어갑니다.", "⑪ 홀 메모는 라운드 입력의 홀별 「메모」를 샷 종류(티샷·세컨·어프로치·벙커·퍼트)와 잘함/미스로 나눠 모읍니다."],
+    putts: ["퍼트 수와 「1st 퍼트 거리」를 기록한 홀로 짧은 퍼트 마무리와 긴 퍼트 거리감을 나눠 봅니다.", "위 기간 필터의 「최근 라운드」를 고르면 이번 라운드만 볼 수 있습니다."],
   };
   const desc = (k) => (DESC[k] ? `<ul class="desc">${DESC[k].map((x) => `<li>${x}</li>`).join("")}</ul>` : "");
   const head = (k) => filterBar() + desc(k);
@@ -232,19 +235,9 @@
 
   // 메뉴를 줄이려고 비슷한 화면을 한 메뉴의 하위 탭으로 묶었다
   const SUB = {
-    analysis: [["score", "스코어", () => statsView()], ["holes", "홀·파", () => holesView()], ["shots", "샷 분석", () => detailView()]],
+    analysis: [["score", "스코어", () => statsView()], ["holes", "홀·파", () => holesView()], ["shots", "샷 분석", () => detailView()], ["putts", "퍼트", () => puttsView()]],
     register: [["input", "직접 입력", () => inputView(null)], ["paste", "붙여넣기·사진", () => importView()]],
   };
-  document.addEventListener("click", (e) => {
-    const a = e.target.closest && e.target.closest("a.ph");
-    if (!a) return;
-    e.preventDefault();
-    const ov = document.createElement("div");
-    ov.className = "ph-view";
-    ov.innerHTML = `<img src="${a.querySelector("img").src}" alt="사진"><button type="button" aria-label="닫기">✕</button>`;
-    ov.onclick = () => ov.remove();
-    document.body.appendChild(ov);
-  });
   function route() {
     charts.forEach((c) => c.destroy());
     charts = [];
@@ -316,7 +309,12 @@
   // 설정 표에서 육각형 기준을 목표와 같은 단위로 보여 준다: 비율은 %, 홀당 퍼트는 라운드당
   const PCT = new Set(["fw", "gir", "scr"]);
   const RSCALE = { fw: 100, gir: 100, scr: 100, pph: 18 };
-  const uniFmt = (r, v) => (!isNum(v) ? "-" : r === "fp" ? v.toFixed(1) + "m" : v.toFixed(1));
+  // 실력 진단 한 줄의 목표. targets에 없으면(거리감·위기관리) 육각형 목표선 점수가 되는 값을 목표로 쓴다
+  function uniGoal(u) {
+    if (u.t) return settings.targets[u.t];
+    const v = S.valueAt(settings.radar[u.r], settings.radarTarget);
+    return { v, low: u.low, fmt: u.r === "fp" ? "m" : "1" };
+  }
   function dashboard() {
     const fr = frounds();
     const A = S.analyze(fr, settings);
@@ -326,10 +324,13 @@
     });
     const okList = rows.filter((r) => r.ok === true).map((r) => r.t.label);
     const ngList = rows.filter((r) => r.ok === false).map((r) => r.t.label);
+    // 목표가 따로 없는 거리감·위기관리도 육각형 목표선 값으로 판정해 「먼저 볼 것」에 넣는다
+    UNI.filter((u) => !u.t).forEach((u) => { const g = uniGoal(u); if (meets(A.radar.raw[u.r], g) === false) ngList.push(u.label); });
     const lossTop = A.loss.filter((l) => isNum(l.r5)).sort((a, b) => b.r5 - a.r5)[0];
     const H = S.holeLevel(fr);
     const ps = [3, 4, 5].filter((p) => isNum(H.byPar[p].over)).sort((a, b) => H.byPar[a].over - H.byPar[b].over);
     const frA = S.avg(A.fulls.map((r) => r.front)), bk = S.avg(A.fulls.map((r) => r.back));
+    const lastD = (A.fulls[0] || A.dets[0] || {}).date;
     app.innerHTML = `
       ${welcomeBox()}
       <div class="notice" style="margin-bottom:10px">🆕 겹치던 통계·분석·설정을 정리했습니다. <a href="#/review">무엇을 정리했나 보기 (${REVIEW.length}가지)</a></div>
@@ -344,18 +345,18 @@
       </div>
       <h2>실력 진단 <span class="muted">최근 5라운드 · 목표 판정과 영역 점수를 한 표로</span></h2>
       <div class="tbl-wrap"><table>
-        <thead><tr><th class="l">지표</th><th>목표</th><th>최근 5R</th><th>판정</th><th>점수</th><th>전체 평균</th></tr></thead>
+        <thead><tr><th class="l">지표</th><th>목표</th><th>최근 5R</th><th>최근 라운드${lastD ? `<br><span class="muted">${dot(lastD).slice(5)}</span>` : ""}</th><th>판정</th><th>점수</th><th>전체 평균</th></tr></thead>
         <tbody>${UNI.map((u) => {
-          const t = u.t && settings.targets[u.t], m = u.t ? A.metric(u.t) : null;
+          const t = uniGoal(u), m = u.t ? A.metric(u.t) : null;
           const r5 = m ? m.r5 : A.radar.raw[u.r], all = m ? m.all : A.radarAll.raw[u.r];
-          const ok = t ? meets(r5, t) : null, sc = u.r ? A.radar.score[u.r] : null;
-          const fmt = (v) => (t ? fmtT(v, t.fmt) : uniFmt(u.r, v));
+          const last = m ? m.last : A.radarLast.raw[u.r], okL = meets(last, t);
+          const ok = meets(r5, t), sc = u.r ? A.radar.score[u.r] : S.linScore(settings.scores[u.t], r5);
           return `<tr><td class="l"><b>${u.label}</b>${u.r ? ` <span class="pill">${settings.radar[u.r].label}</span>` : ""}<br><span class="muted">${u.low ? "▼ 낮을수록 좋음" : "▲ 높을수록 좋음"}</span></td>
-            <td>${t ? `<b>${goalText(t)}</b>` : `<span class="muted">-</span>`}</td>${t ? valCell(r5, t, ok, true) : `<td><b>${fmt(r5)}</b></td>`}<td>${judge(ok)}</td>
-            <td class="${isNum(sc) ? (sc >= settings.radarTarget ? "ok" : "ng") : ""}">${isNum(sc) ? `<b>${sc}</b>` : "-"}</td><td class="muted">${fmt(all)}</td></tr>`;
+            <td><b>${goalText(t)}</b>${u.t ? "" : `<br><span class="muted">육각형 ${settings.radarTarget}점</span>`}</td>${valCell(r5, t, ok, true)}${valCell(last, t, okL)}<td>${judge(ok)}</td>
+            <td class="${isNum(sc) ? (sc >= settings.radarTarget ? "ok" : "ng") : ""}">${isNum(sc) ? `<b>${sc}</b>` : "-"}</td><td class="muted">${fmtT(all, t.fmt)}</td></tr>`;
         }).join("")}</tbody>
       </table></div>
-      <p class="legend-note">판정은 목표값 기준(최근 5R), 점수는 설정의 0점·100점 기준으로 바꾼 값입니다(오른쪽 육각형). 예전에는 두 표(실력 진단·육각형 기준)에 같은 지표가 따로 있었는데 하나로 합쳤습니다. 타수 지표는 18홀 라운드(${A.fulls.length}회), 나머지는 퍼트를 기록한 라운드(${A.dets.length}회) 기준.</p>
+      <p class="legend-note">판정은 목표값 기준(최근 5R), 「최근 라운드」는 가장 최근 1라운드 값(목표 달성은 초록·미달은 빨강)으로 5R 평균과 비교해 이번 라운드가 나아졌는지 봅니다${lastD && A.fulls[0] && A.dets[0] && A.fulls[0].id !== A.dets[0].id ? ` — 타수 지표는 ${dot(A.fulls[0].date)}, 퍼트·GIR 등은 퍼트를 기록한 ${dot(A.dets[0].date)} 라운드` : ""}. 점수는 설정의 0점·100점 기준으로 바꾼 값입니다(육각형 7영역 + 평균 타수·파 이하·더블보기+·벌타). 거리감·위기관리는 따로 정한 목표가 없어 <b>육각형 목표선(${settings.radarTarget}점)에 해당하는 값</b>을 목표로 판정합니다. 예전에는 두 표(실력 진단·육각형 기준)에 같은 지표가 따로 있었는데 하나로 합쳤습니다. 타수 지표는 18홀 라운드(${A.fulls.length}회), 나머지는 퍼트를 기록한 라운드(${A.dets.length}회) 기준.</p>
       <div class="grid g2" style="margin-top:12px">
         <div class="card"><h3 class="mt0">7영역 육각형 <span class="muted">최근 상세 5R vs 전체</span></h3><div class="chart-box tall"><canvas id="cRadar"></canvas></div>
           <p class="legend-note">초록: 최근 5라운드 · 파랑: 전체 평균 · 주황 점선: 목표선(${settings.radarTarget}점).</p></div>
@@ -448,6 +449,10 @@
     const draft = ls.get(draftKey);
     const base = edit ? structuredClone(edit) : { date: new Date().toISOString().slice(0, 10), course: "", front: "", back: "", tee: "White", region: "", memo: "", holes: [] };
     let r = draft && draft.holes ? draft : base;
+    // 라운드 사진: 저장된 것은 경로, 새로 고른 것은 줄인 사진(dataUrl·b64). 새 사진은 따로 임시 저장(용량이 커서 실패하면 넘어감)
+    const photoKey = draftKey + ":photos";
+    const photoSt = { photos: (edit?.photos || []).map((path) => ({ path })), removed: [] };
+    (ls.get(photoKey) || []).forEach((u) => photoSt.photos.push({ dataUrl: u, b64: u.split(",")[1] }));
     const H = Object.fromEntries(Array.from({ length: 18 }, (_, i) => [i + 1, { h: i + 1 }]));
     (r.holes || []).forEach((h) => (H[h.h] = { ...h }));
     let cur = 1;
@@ -530,6 +535,13 @@
       <h3>스코어카드 미리보기</h3>
       <div id="preview"></div>
       <div class="totals" id="totals"></div>
+
+      <h3>라운드 사진·동영상 <span class="muted">추억 남기기 · 개수 제한 없음</span></h3>
+      <div class="card">
+        <div class="row"><label class="btn ghost filebtn">📷 사진·동영상 추가<input type="file" accept="image/*,video/*" multiple id="fPhotos" hidden></label><span class="muted" id="phInfo"></span></div>
+        <div id="phList"></div>
+        <p class="legend-note">여러 개를 한 번에 골라도 되고 여러 번 추가해도 됩니다. 「저장」 때 <b>이 휴대폰 앱 저장공간</b>에 함께 저장됩니다(다른 곳으로 보내지 않음). 사진은 긴 변 1600px로 줄이고 촬영 위치 등 사진 속 정보를 지웁니다. <b>동영상은 줄이지 않고 그대로 저장하므로 한 개 50MB까지</b>입니다(휴대폰 영상 약 20~30초) — 스윙·퍼트 장면만 잘라서 넣으세요. 동영상은 이 기기 임시 저장에 들어가지 않으니 저장 직전에 고르는 것을 권장합니다. 동영상이 많으면 백업 파일도 커집니다.</p>
+      </div>
       <div class="row" style="margin-top:14px">
         <button class="btn" id="bSave" type="button" ${G.canWrite() ? "" : "disabled"}>저장</button>
         <a class="btn ghost" href="${edit ? "#/round/" + encodeURIComponent(edit.id) : "#/rounds"}">취소</a>
@@ -615,7 +627,30 @@
     });
     $("bPrev").onclick = () => { cur = cur === 1 ? 18 : cur - 1; drawAll(); };
     $("bNext").onclick = () => { cur = cur === 18 ? 1 : cur + 1; drawAll(); };
-    if ($("bDiscard")) $("bDiscard").onclick = () => { ls.del(draftKey); inputView(id); };
+    if ($("bDiscard")) $("bDiscard").onclick = () => { ls.del(draftKey); ls.del(photoKey); inputView(id); };
+    function drawPhotos() {
+      const n = photoSt.photos.length, fresh = photoSt.photos.filter((p) => p.dataUrl).length;
+      $("phInfo").textContent = n ? `${mediaCount(photoSt.photos)}${fresh ? ` (저장 전 ${fresh}개)` : ""}` : "";
+      $("phList").innerHTML = n ? `<div class="photos">${photoSt.photos.map((p, i) => `<div class="ph" data-pv="${i}">${thumb(p, i)}${p.dataUrl ? `<span class="ph-new">저장 전${p.size ? ` · ${(p.size / 1048576).toFixed(1)}MB` : ""}</span>` : ""}<button type="button" class="ph-x" data-pdel="${i}" aria-label="빼기">✕</button></div>`).join("")}</div>` : "";
+      $("phList").querySelectorAll("[data-pdel]").forEach((el) => (el.onclick = (e) => { e.stopPropagation(); const [p] = photoSt.photos.splice(Number(el.dataset.pdel), 1); if (p.path) photoSt.removed.push(p.path); savePhotoDraft(); drawPhotos(); }));
+      $("phList").querySelectorAll("[data-pv]").forEach((el) => (el.onclick = () => openViewer(photoSt.photos.map(mediaItem), Number(el.dataset.pv))));
+    }
+    function savePhotoDraft() {
+      const fresh = photoSt.photos.filter((p) => p.dataUrl && !p.video).map((p) => p.dataUrl);   // 동영상은 너무 커서 임시 저장하지 않음
+      if (!fresh.length) return ls.del(photoKey);
+      try { localStorage.setItem(photoKey, JSON.stringify(fresh)); } catch { ls.del(photoKey); }   // 기기 저장 공간이 모자라면 사진은 임시 저장하지 않음
+    }
+    $("fPhotos").onchange = async (e) => {
+      const files = [...e.target.files];
+      e.target.value = "";
+      for (const [i, f] of files.entries()) {
+        $("phInfo").textContent = `읽는 중 ${i + 1}/${files.length}…`;
+        try { photoSt.photos.push(await readMedia(f)); } catch (err) { toast(err.message, 6000); }
+      }
+      savePhotoDraft();
+      drawPhotos();
+    };
+    drawPhotos();
     $("bCourse").onclick = () => {
       const m = meta();
       const prev = S.byRecent(rounds.filter((x) => x.course === m.course && x.id !== edit?.id));
@@ -663,12 +698,19 @@
       $("bSave").disabled = true;
       $("bSave").textContent = "저장 중…";
       try {
+        const what = `${m.date} ${m.course}`;
+        const ph = await uploadPhotos(photoSt, obj.id, what, (k, n, vid) => ($("bSave").textContent = `${vid ? "동영상" : "사진"} 올리는 중 ${k}/${n}…`));
+        obj.photos = ph.paths.length ? ph.paths : undefined;
+        $("bSave").textContent = "저장 중…";
         await commit((data) => {
           const i = data.findIndex((x) => x.id === obj.id);
           if (i >= 0) data[i] = obj; else data.push(obj);
           return data.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
         }, `${edit ? "라운드 수정" : "라운드 추가"}: ${m.date} ${m.course}`);
+        for (const p of photoSt.removed) await G.deleteFile(p, `사진 삭제: ${what}`).catch(() => null);
+        if (ph.errs.length) toast("사진은 저장했지만 다른 저장소 동기화 실패: " + ph.errs.join(" / "), 6000);
         ls.del(draftKey);
+        ls.del(photoKey);
         toast("저장했습니다.");
         location.hash = "#/round/" + encodeURIComponent(obj.id);
       } catch (e) {
@@ -710,6 +752,65 @@
       <thead><tr><th class="l">${name}</th>${Array.from({ length: 9 }, (_, i) => { const p = hm[a + i]?.par; return `<th>${parMark(p)}${a + i}</th>`; }).join("")}<th>${a === 1 ? "OUT" : "IN"}</th></tr></thead>
       <tbody>${rowsUsed.map(([k, lab, how]) => `<tr><th class="l">${lab}</th>${Array.from({ length: 9 }, (_, i) => cell(a + i, k)).join("")}<td><b>${tot(a, k, how || (k === "gir" ? "gir" : ""))}</b></td></tr>`).join("")}</tbody></table></div>`;
     return half(1, "전반") + half(10, "후반");
+  }
+
+  // ───────────── 라운드 사진·동영상 ─────────────
+  // 동영상도 사진과 같은 목록(r.photos)에 경로로 저장하고 확장자로 구분한다. 사진처럼 줄일 수 없어 한 개 크기를 제한한다
+  // (휴대폰판: 동영상이 크면 저장공간·백업 파일이 함께 커진다)
+  const VIDEO_MAX = 50 * 1024 * 1024;
+  const VIDEO_EXT = /\.(mp4|mov|m4v|webm)$/i;
+  const isVideo = (p) => (typeof p === "string" ? VIDEO_EXT.test(p) : !!p.video || VIDEO_EXT.test(p.path || ""));
+  // 휴대폰판: 저장한 동영상은 앱 저장공간의 파일(blob: 주소)로 재생한다
+  const videoSrcs = (path) => [G.rawUrl(path)];
+  // 보기 창에 넘길 항목: 사진은 주소 문자열, 동영상은 {video, srcs}
+  const mediaItem = (p) => (isVideo(p) ? { video: true, srcs: p.path || typeof p === "string" ? videoSrcs(p.path || p) : [p.dataUrl] } : p.dataUrl || G.rawUrl(p.path || p));
+  async function readVideo(file) {
+    if (file.size > VIDEO_MAX) throw new Error(`동영상이 ${Math.round(file.size / 1048576)}MB라 올릴 수 없습니다(한 개 50MB까지). 휴대폰 갤러리에서 앞뒤를 잘라 짧게 만들어 주세요.`);
+    const b64 = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = () => no(new Error("동영상을 읽지 못했습니다.")); fr.readAsDataURL(file); });
+    const ext = (file.name.match(/\.(\w+)$/) || [])[1]?.toLowerCase() || (file.type.includes("quicktime") ? "mov" : "mp4");
+    return { video: true, ext, dataUrl: URL.createObjectURL(file), b64, size: file.size };
+  }
+  // 사진·동영상 파일 하나를 편집 목록에 넣을 항목으로(사진은 줄이고, 동영상은 크기만 확인)
+  const readMedia = (f) => (f.type.startsWith("video/") || VIDEO_EXT.test(f.name) ? readVideo(f) : Companions.shrink(f));
+  // 작은 칸 미리보기: 동영상은 첫 장면 + ▶ 표시
+  function thumb(p, i, attr = "") {
+    if (!isVideo(p)) return `<img src="${p.dataUrl || G.rawUrl(p.path || p)}" alt="사진 ${i + 1}" loading="lazy" ${attr}>`;
+    const srcs = p.dataUrl ? [p.dataUrl] : videoSrcs(p.path || p);
+    return `<video preload="metadata" muted playsinline ${attr}>${srcs.map((u) => `<source src="${u}${u.startsWith("blob:") ? "" : "#t=0.1"}">`).join("")}</video><span class="ph-play" aria-hidden="true">▶</span>`;
+  }
+  const mediaCount = (list) => { const v = list.filter(isVideo).length, ph = list.length - v; return [ph ? `사진 ${ph}` : "", v ? `동영상 ${v}` : ""].filter(Boolean).join(" · "); };
+
+  // ───────────── 사진·동영상 크게 보기 ─────────────
+  function openViewer(urls, start = 0) {
+    let i = start;
+    const v = document.createElement("div");
+    v.className = "viewer";
+    v.innerHTML = `<button type="button" class="vw-x" aria-label="닫기">✕</button><span class="vw-n"></span>
+      <button type="button" class="vw-nav vw-prev" aria-label="이전">‹</button><div class="vw-media"></div><button type="button" class="vw-nav vw-next" aria-label="다음">›</button>
+      <a class="vw-orig" target="_blank" rel="noopener">원본 열기</a>`;
+    const box = v.querySelector(".vw-media");
+    const show = () => {
+      const it = urls[i];
+      box.innerHTML = typeof it === "string" ? `<img src="${it}" alt="사진 ${i + 1}">`
+        : `<video controls autoplay playsinline>${it.srcs.map((u) => `<source src="${u}">`).join("")}이 브라우저에서 재생할 수 없는 동영상입니다.</video>`;
+      v.querySelector(".vw-n").textContent = `${i + 1} / ${urls.length}`;
+      v.querySelector(".vw-orig").href = typeof it === "string" ? it : it.srcs.at(-1);
+      v.querySelectorAll(".vw-nav").forEach((b) => (b.hidden = urls.length < 2));
+    };
+    const go = (d) => { i = (i + d + urls.length) % urls.length; show(); };
+    const close = () => { box.innerHTML = ""; v.remove(); document.removeEventListener("keydown", key); document.body.style.overflow = ""; };
+    const key = (e) => { if (e.key === "Escape") close(); else if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1); };
+    v.querySelector(".vw-x").onclick = close;
+    v.querySelector(".vw-prev").onclick = () => go(-1);
+    v.querySelector(".vw-next").onclick = () => go(1);
+    v.onclick = (e) => { if (e.target === v || e.target === box) close(); };
+    let x0 = null;
+    v.addEventListener("touchstart", (e) => (x0 = e.touches[0].clientX), { passive: true });
+    v.addEventListener("touchend", (e) => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1); x0 = null; });
+    document.addEventListener("keydown", key);
+    document.body.style.overflow = "hidden";
+    document.body.appendChild(v);
+    show();
   }
 
   // ───────────── 동반자·사진 ─────────────
@@ -859,7 +960,7 @@
           <label class="chk"><input type="checkbox" data-act="keep" ${st.keep === false ? "" : "checked"}> 라운드에 사진 저장</label></div>
         <p class="legend-note">점수 읽기는 사진 속 글자를 <b>이 기기에서</b> 읽어 동반자 「이름·점수」를 바로 넣습니다(처음 한 번 인식 데이터를 받느라 시간이 걸림). 손글씨·흐린 사진은 틀리기 쉬우니 숫자를 확인하고, 이상하면 읽은 글이 들어간 붙여넣기 칸을 고쳐 「읽어서 추가」를 누르세요. 저장한 사진은 공개 저장소에 올라가며, 촬영 위치 등 사진 속 정보는 지우고 올립니다.</p>
         <div class="ocr-msg" data-act="msg"></div>
-        ${st.photos.length ? `<div class="photos">${st.photos.map((p, i) => `<div class="ph"><img src="${p.dataUrl || G.rawUrl(p.path)}" alt="사진 ${i + 1}">${p.dataUrl ? `<span class="ph-new">저장 전</span>` : ""}<button type="button" class="ph-x" data-pdel="${i}" aria-label="사진 빼기">✕</button></div>`).join("")}</div>` : ""}`;
+        ${st.photos.length ? `<div class="photos">${st.photos.map((p, i) => `<div class="ph">${thumb(p, i)}${p.dataUrl ? `<span class="ph-new">저장 전</span>` : ""}<button type="button" class="ph-x" data-pdel="${i}" aria-label="사진 빼기">✕</button></div>`).join("")}</div>` : ""}`;
       const q = (s) => box.querySelector(s);
       box.querySelectorAll("[data-cn]").forEach((el) => (el.onchange = () => {
         const c = st.comps[el.dataset.cn], v = el.value.trim();
@@ -913,12 +1014,14 @@
   }
 
   // 새 사진을 올리고 경로 목록을 돌려준다(라운드 기록에는 경로만 저장)
-  async function uploadPhotos(st, id, what) {
-    const errs = [];
+  async function uploadPhotos(st, id, what, onProgress) {
+    const errs = [], total = st.photos.filter((p) => !p.path).length;
+    let k = 0;
     for (const [i, p] of st.photos.entries()) {
       if (p.path) continue;
-      const path = `${G.DATA_DIR}/photos/${id}-${Date.now().toString(36)}${i}.jpg`;
-      errs.push(...(await G.putFile(path, p.b64, `사진 추가: ${what}`)));
+      if (onProgress) onProgress(++k, total, p.video);
+      const path = `${G.DATA_DIR}/photos/${id}-${Date.now().toString(36)}${i}.${p.video ? p.ext : "jpg"}`;
+      errs.push(...(await G.putFile(path, p.b64, `${p.video ? "동영상" : "사진"} 추가: ${what}`)));
       p.path = path;
       delete p.b64;
     }
@@ -963,7 +1066,7 @@
         <thead><tr><th>날짜</th><th class="l">골프장</th><th>홀</th><th>총타수</th><th>오버</th><th>전반</th><th>후반</th><th>퍼트</th><th>GIR</th><th>FW</th><th>드라이버</th><th>더블+</th><th>벌타</th></tr></thead>
         <tbody>${list.map((r) => {
           const s = S.round(r);
-          return `<tr class="click" data-id="${esc(r.id)}"><td>${dot(r.date)}</td><td class="l">${esc(r.course)}</td><td>${s.holes}</td><td><b>${s.strokes ?? "-"}</b></td><td>${sgn(s.over, 0)}</td><td>${s.front ?? "-"}</td><td>${s.back ?? "-"}</td><td>${s.detail ? s.putts : "-"}</td><td>${s.detail ? pct(s.girp) : "-"}</td><td>${pct(s.fwp)}</td><td>${isNum(s.drive) ? Math.round(s.drive) + "m" : "-"}</td><td>${s.dbl}</td><td>${s.detail && isNum(s.pen) ? s.pen : "-"}</td></tr>`;
+          return `<tr class="click" data-id="${esc(r.id)}"><td>${dot(r.date)}</td><td class="l">${esc(r.course)}${(r.photos || []).length ? ` <span class="muted" title="${mediaCount(r.photos)}">${(() => { const v = r.photos.filter(isVideo).length, ph = r.photos.length - v; return (ph ? "📷" + ph : "") + (v ? " 🎬" + v : ""); })()}</span>` : ""}</td><td>${s.holes}</td><td><b>${s.strokes ?? "-"}</b></td><td>${sgn(s.over, 0)}</td><td>${s.front ?? "-"}</td><td>${s.back ?? "-"}</td><td>${s.detail ? s.putts : "-"}</td><td>${s.detail ? pct(s.girp) : "-"}</td><td>${pct(s.fwp)}</td><td>${isNum(s.drive) ? Math.round(s.drive) + "m" : "-"}</td><td>${s.dbl}</td><td>${s.detail && isNum(s.pen) ? s.pen : "-"}</td></tr>`;
         }).join("")}</tbody>
       </table></div>`;
     app.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", () => (location.hash = "#/round/" + encodeURIComponent(tr.dataset.id))));
@@ -990,6 +1093,9 @@
       ${s.checks.length ? `<div class="notice" style="margin-top:10px">기록 확인: ${s.checks.join(", ")}번 홀은 온그린 타수 + 퍼트가 타수와 다릅니다.</div>` : ""}
       ${scorecard(r, false)}
       ${r.memo ? `<p class="card" style="margin-top:12px">${esc(r.memo)}</p>` : ""}
+      <h3>라운드 사진·동영상 <span class="muted">${(r.photos || []).length ? mediaCount(r.photos) + " · 누르면 크게" : "없음"}</span></h3>
+      ${(r.photos || []).length ? `<div class="photos view">${r.photos.map((p, i) => `<button type="button" class="ph" data-pv="${i}" aria-label="${isVideo(p) ? "동영상" : "사진"} ${i + 1} 크게 보기">${thumb(p, i)}</button>`).join("")}</div>`
+        : `<p class="muted">「수정」에서 사진·동영상을 붙일 수 있습니다.</p>`}
       ${s.detail ? `<div class="card" style="margin-top:12px"><h3 class="mt0">이 라운드 7영역</h3>
         <div class="grid g2">
           <div class="chart-box tall"><canvas id="cR"></canvas></div>
@@ -999,7 +1105,6 @@
         <p class="legend-note">이 라운드 <b>한 경기만</b>의 지표를 점수로 바꾼 것입니다(홈의 육각형은 최근 5라운드 평균이라 한 경기보다 덜 들쭉날쭉합니다). 주황 점선은 목표선 ${settings.radarTarget}점, 표의 「100점 기준」이 그 목표에 해당하는 실제 값입니다.</p></div>` : ""}
       <h3>동반자 비교 <span class="muted">${(r.companions || []).length ? (r.companions || []).length + "명" : "없음"}</span></h3>
       ${companionCompare(r) || `<p class="muted">함께 친 동반자의 점수를 넣으면 순위·홀별로 비교합니다.</p>`}
-      ${(r.photos || []).length ? `<div class="photos view">${r.photos.map((p, i) => `<a class="ph" href="${G.rawUrl(p)}" target="_blank" rel="noopener"><img src="${G.rawUrl(p)}" alt="라운드 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>` : ""}
       <div class="row" style="margin-top:10px"><button class="btn ghost" id="bComp" type="button">👥 동반자·사진 ${(r.companions || []).length || (r.photos || []).length ? "편집" : "추가"}</button></div>
       <div id="compBox"></div>
       <div id="delBox"></div>
@@ -1027,6 +1132,7 @@
         }],
       });
     }
+    app.querySelectorAll(".photos.view [data-pv]").forEach((b) => (b.onclick = () => openViewer(r.photos.map(mediaItem), Number(b.dataset.pv))));
     document.getElementById("bComp").onclick = () => {
       const box = document.getElementById("compBox");
       const st = newEditState(r);
@@ -1057,10 +1163,12 @@
 
   // ───────────── 통계 ─────────────
   let trendYear = "";
+  let stabN = 10;   // 평균·안정성을 볼 최근 라운드 수(0 = 조건 전체)
   function statsView() {
     const fr = frounds();
     const A = S.analyze(fr, settings);
-    const ST = S.stability(A.fulls);
+    const ST = S.stability(stabN ? A.fulls.slice(0, stabN) : A.fulls), STall = S.stability(A.fulls);
+    const stabL = stabN ? `최근 ${stabN}R` : "조건 전체";
     const types = S.scoreTypes(fr);
     const bands = [["70대 이하", 0, 79], ["80대", 80, 89], ["90대", 90, 99], ["100 이상", 100, 999]].map(([l, a, b]) => ({ l, n: A.fulls.filter((r) => r.strokes >= a && r.strokes <= b).length }));
     const yr = [...new Set(A.rs.map((r) => r.year))].sort().map((y) => {
@@ -1080,10 +1188,11 @@
       <div id="stList"></div>
 
       <h2>평균 · 안정성 <span class="muted">18홀 ${A.fulls.length}회</span></h2>
+      <div class="chips" style="margin-bottom:8px">${[[5, "최근 5R"], [10, "최근 10R"], [0, "조건 전체"]].map(([v, l]) => `<button type="button" class="chip ${stabN === v ? "on" : ""}" data-sn="${v}">${l}</button>`).join("")}</div>
       <div class="kpis">
-        ${kpi("최근 10R 평균", f1(ST?.last10), "최근 18홀 10라운드")}
-        ${kpi("표준편차", isNum(ST?.sd) ? "±" + ST.sd.toFixed(1) : "-", "작을수록 점수가 안정적")}
-        ${kpi("최저 · 최고", ST ? `${ST.min} · ${ST.max}` : "-", "베스트 · 워스트")}
+        ${kpi(stabL + " 평균", f1(ST?.avg), ST ? `18홀 ${ST.n}라운드${stabN && STall ? ` · 전체 ${f1(STall.avg)}` : ""}` : "")}
+        ${kpi("표준편차", isNum(ST?.sd) ? "±" + ST.sd.toFixed(1) : "-", `작을수록 안정적${stabN && STall ? ` · 전체 ±${STall.sd.toFixed(1)}` : ""}`)}
+        ${kpi("최저 · 최고", ST ? `${ST.min} · ${ST.max}` : "-", stabL + " 베스트 · 워스트")}
       </div>
 
       <h2>기간별 평균 타수 <span class="muted">${TB.unit}별 (라운드별 추이는 홈)</span></h2>
@@ -1117,6 +1226,7 @@
       bindRows();
     }));
     app.querySelectorAll("[data-ty]").forEach((b) => (b.onclick = () => { trendYear = b.dataset.ty; statsView(); }));
+    app.querySelectorAll("[data-sn]").forEach((b) => (b.onclick = () => { stabN = Number(b.dataset.sn); statsView(); }));
     app.querySelectorAll("[data-course]").forEach((tr) => (tr.onclick = () => { F.course = tr.dataset.course; ls.set(KEY_FILTER, F); location.hash = "#/rounds"; }));
     const bindRows = () => app.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => (location.hash = "#/round/" + encodeURIComponent(tr.dataset.id))));
     bindRows();
@@ -1496,6 +1606,33 @@
     chart("cHole", { type: "bar", data: { labels: H.byHole.map((_, i) => i + 1), datasets: [{ data: H.byHole.map((h) => h.over), backgroundColor: H.byHole.map((h) => (h.over === maxO ? "#ff8f8f" : h.over === minO ? "#7aa7f7" : "#7fd1ae")) }] }, options: baseOpts({ scales: { y: { beginAtZero: true, ...noGrid }, x: noGrid } }), plugins: [valueLabels(f1)] });
   }
 
+  // ───────────── 홀 메모 (샷 분석 ⑪ · 퍼트 탭) ─────────────
+  const TONE = { good: `<span class="pill ok">잘함</span>`, bad: `<span class="pill ng">미스</span>`, mix: `<span class="pill">잘함·미스</span>` };
+  let memoCat = "";
+  // only: 한 샷 종류만(퍼트 탭은 "putt"). 조각마다 샷 종류·판정을 달아 보여 준다
+  function memoBlock(fr, sel, only, title) {
+    const M = S.memoNotes(sel ? fr.filter((r) => r.id === sel) : fr);
+    const cat = only || memoCat;
+    const notes = M.notes.filter((n) => !cat || n.cats.includes(cat));
+    const scoreName = (v) => (!isNum(v) ? "" : v <= -1 ? "버디+" : v === 0 ? "파" : v === 1 ? "보기" : v === 2 ? "더블" : "+" + v);
+    const rows = notes.map((n) => `<tr class="click" data-id="${esc(n.rid)}"><td>${dot(n.date).slice(2)}<br><span class="muted">${esc(n.course)}</span></td><td><b>${n.h}</b>${isNum(n.par) ? `<br><span class="muted">파${n.par}</span>` : ""}</td><td>${scoreName(n.score)}${isNum(n.putts) ? `<br><span class="muted">${n.putts}퍼트${isNum(n.fp) && n.fp > 0 ? " · " + n.fp + "m" : ""}</span>` : ""}</td>
+      <td class="l wrap">${n.parts.filter((p) => !cat || p.cat === cat).map((p) => `${only ? "" : `<span class="pill" style="background:#eef1f6">${M.cats[p.cat]}</span> `}${esc(p.text)} ${TONE[p.tone] || ""}`).join("<br>")}</td></tr>`).join("");
+    const sum = only ? "" : `<div class="tbl-wrap"><table><thead><tr><th class="l">샷 종류</th><th>메모한 홀</th><th>잘함</th><th>미스</th><th>그 홀 평균 Score</th></tr></thead>
+      <tbody>${M.byCat.filter((c) => c.n).map((c) => `<tr class="click" data-mc="${c.k}"><td class="l"><b>${c.l}</b></td><td>${c.n}</td><td class="${c.good ? "ok" : ""}">${c.good}</td><td class="${c.bad > c.good ? "ng" : ""}">${c.bad}</td><td>${sgn(c.over)}</td></tr>`).join("")}</tbody></table></div>
+      <div class="chips" style="margin:10px 0 8px"><button type="button" class="chip ${memoCat ? "" : "on"}" data-mc="">전체 ${M.notes.length}</button>${M.byCat.filter((c) => c.n).map((c) => `<button type="button" class="chip ${memoCat === c.k ? "on" : ""}" data-mc="${c.k}">${c.l} ${c.n}</button>`).join("")}</div>`;
+    const worst = M.byCat.filter((c) => c.k !== "etc" && c.bad).sort((a, b) => b.bad - a.bad || b.n - a.n)[0];
+    return `<div id="memoBox"><h3>${title} <span class="muted">메모 ${only ? notes.length : M.notes.length}홀</span></h3>
+      ${!M.notes.length ? `<p class="legend-note">아직 메모를 적은 홀이 없습니다. 라운드 입력의 홀별 「메모」 칸에 잘한 샷·미스한 샷을 적어 두면 여기에 모입니다.</p>` : `
+      ${!only && worst ? `<p class="legend-note"><b class="ng">미스 메모가 가장 많은 샷: ${worst.l}</b> (${worst.bad}번). 숫자보다 「어떤 미스가 반복되는지」를 아래 메모에서 확인하세요.</p>` : ""}
+      ${sum}
+      ${notes.length ? `<div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>홀</th><th>결과</th><th class="l">메모</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="legend-note">이 종류로 분류된 메모가 없습니다.</p>`}
+      <p class="legend-note">메모 낱말로 자동 분류한 값이라 틀릴 수 있습니다(예: 「7 탑」→ 세컨·미스, 「첫펏 짤」→ 퍼트·미스, 「6번으로 온」→ 세컨·잘함). 문장마다 <b>티샷 · 세컨/7번 · 어프로치 · 벙커 · 펏</b>처럼 샷 이름을 앞에 쓰고 쉼표로 나누면 더 정확해집니다.</p>`}</div>`;
+  }
+  function bindMemo(rerender) {
+    document.querySelectorAll("#memoBox [data-mc]").forEach((b) => (b.onclick = () => { memoCat = b.dataset.mc; rerender(); }));
+    document.querySelectorAll("#memoBox tr[data-id]").forEach((tr) => (tr.onclick = () => (location.hash = "#/round/" + encodeURIComponent(tr.dataset.id))));
+  }
+
   // ───────────── 상세 분석 (v2 「상세분석」 시트) ─────────────
   function detailView() {
     const fr = frounds();
@@ -1536,9 +1673,114 @@
           </div>` + t("", ["거리대", "홀 수", "FW 안착", "평균 Score", "더블+ 비율"], DV.bands.map((x) => [x.l, x.n, pct(x.fwp), sgn(x.over), pct(x.dbl)]),
           "홀 입력의 「티샷 거리」를 적은 파4·파5 홀만 집계합니다. 멀리 칠수록 FW 안착이 떨어지고 스코어가 나빠지면, 거리보다 방향(컨트롤 샷)을 우선하는 편이 낫습니다. 평균 거리는 설정 → 내 클럽 거리의 드라이버 값으로 쓸 수 있습니다.");
       })()}
-      ${t("⑦ 그린 미스 · 어프로치 거리", ["", "홀 수", "평균 Score", "스크램블%"], D.green.map((x) => [x.l, x.n, sgn(x.over), x.scr === null ? "-" : pct(x.scr)]), "짧음이 대부분이면 한 클럽 길게, 30m 이상에서 스크램블이 낮으면 하프 웨지 거리 연습을 우선합니다.")}`;
+      ${t("⑦ 그린 미스 · 어프로치 거리", ["", "홀 수", "평균 Score", "스크램블%"], D.green.map((x) => [x.l, x.n, sgn(x.over), x.scr === null ? "-" : pct(x.scr)]), "짧음이 대부분이면 한 클럽 길게, 30m 이상에서 스크램블이 낮으면 하프 웨지 거리 연습을 우선합니다.")}
+      <div id="memoWrap">${memoBlock(fr, sel, "", "⑪ 홀 메모 · 잘한 샷과 미스")}</div>`;
+    const reMemo = () => { document.getElementById("memoWrap").innerHTML = memoBlock(fr, sel, "", "⑪ 홀 메모 · 잘한 샷과 미스"); bindMemo(reMemo); };
+    bindMemo(reMemo);
     document.getElementById("scope").onchange = (e) => { location.hash = "#/detail" + (e.target.value ? "?r=" + encodeURIComponent(e.target.value) : ""); };
     chart("cFp", { type: "bar", data: { labels: D.fp.map((x) => x.l), datasets: [{ label: "1퍼트율", data: D.fp.map((x) => x.one), backgroundColor: "#7fd1ae" }, { label: "3퍼트율", data: D.fp.map((x) => x.three), backgroundColor: "#ff8f8f" }] }, options: baseOpts({ plugins: legendOn, scales: { y: { beginAtZero: true, ticks: { callback: (v) => Math.round(v * 100) + "%" }, ...noGrid }, x: noGrid } }), plugins: [valueLabels(pct)] });
+  }
+
+  // ───────────── 퍼트 분석 ─────────────
+  // 짧은 퍼트(2m 이내)를 놓치는지, 긴 첫 퍼트를 못 붙여 3퍼트가 되는지를 나눠 본다
+  function puttsView() {
+    const fr = frounds();
+    const P = S.puttStats(fr);
+    const ids5 = new Set(P.rounds.slice(0, 5).map((r) => r.id));
+    const P5 = S.puttStats(fr.filter((r) => ids5.has(r.id)));
+    const per18 = (v) => (isNum(v) ? v * 18 : null);
+    const tbl = (heads, rows) => `<div class="tbl-wrap"><table><thead><tr>${heads.map((h, i) => `<th class="${i ? "" : "l"}">${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
+    if (!P.n) {
+      app.innerHTML = `${head("putts")}<h2>퍼트 분석</h2><div class="notice">이 조건에는 퍼트를 기록한 홀이 없습니다. 라운드 입력에서 홀마다 <b>Putts</b>와 <b>1st 퍼트 거리</b>를 적으면 분석됩니다.</div>`;
+      return;
+    }
+    const lostS = P.lost.perRound(P.lost.short), lostL = P.lost.perRound(P.lost.long);
+    const causeTop = P.p3.cause.slice().sort((a, b) => b.n - a.n)[0];
+    const longIdx = P.p3.cause[2];
+    // 진단 문장: 짧은 퍼트·긴 퍼트·3퍼트 원인·GIR 홀
+    const dx = [];
+    if (P.short.n) dx.push(`<li><span class="${P.short.make < 0.5 ? "ng" : "ok"}">짧은 퍼트</span> 첫 퍼트 ${P.SHORT}m 이내 ${P.short.n}번 중 1퍼트 ${P.short.n - P.short.miss}번(<b>${pct(P.short.make)}</b>) — 놓친 짧은 퍼트 ${P.short.miss}번, 18홀당 ${f1(lostS)}타${P5.short.n ? ` · 최근 5R ${pct(P5.short.make)}` : ""}</li>`);
+    if (P.long.n) dx.push(`<li><span class="${P.long.three >= 0.25 ? "ng" : "ok"}">긴 퍼트</span> 첫 퍼트 ${P.LONG}m 이상 ${P.long.n}번 중 3퍼트 ${P.long.p3}번(<b>${pct(P.long.three)}</b>)${P.long.three >= 0.25 ? " — 첫 퍼트를 홀 가까이 붙이지 못해 3퍼트가 됩니다(거리감)" : ""}</li>`);
+    if (P.p3.n) dx.push(`<li><span class="ng">3퍼트 원인</span> ${P.p3.n}번 중 ${P.p3.cause.map((c) => `${c.l} ${c.n}번`).join(" · ")}${causeTop ? ` → 가장 많은 것: <b>${causeTop.l}</b>` : ""}</li>`);
+    dx.push(`<li><span class="ng">잃은 퍼트</span> 18홀당 <b>${f1(lostS + lostL)}타</b> = 짧은 퍼트(${P.SHORT}m 이내 1퍼트 실패) ${f1(lostS)}타 + 3m 이상 3퍼트 ${f1(lostL)}타 → ${lostL >= lostS ? "<b>긴 첫 퍼트 거리감</b>이 더 많이 잃습니다" : "<b>짧은 퍼트 마무리</b>가 더 많이 잃습니다"}</li>`);
+    if (P.gir.hit.n && P.gir.miss.n) dx.push(`<li><b>그린 적중 홀</b> 평균 퍼트 ${f2(P.gir.hit.putts)} · 첫 퍼트 ${f1(P.gir.hit.fp)}m · 3퍼트 ${pct(P.gir.hit.three)} / 그린 미스 홀 ${f2(P.gir.miss.putts)} · ${f1(P.gir.miss.fp)}m · ${pct(P.gir.miss.three)}${P.gir.hit.three > P.gir.miss.three ? " — 온그린을 하고도 먼 첫 퍼트에서 3퍼트가 많이 나옵니다" : ""}</li>`);
+    const drill = [];
+    if (P.short.n && P.short.make < 0.6) drill.push(`<li><b>1~2m 마무리</b>: 홀 주위 1m·1.5m·2m에 공을 두고 연속 성공 개수 세기, 퍼터 페이스 정렬(게이트) 연습</li>`);
+    if (longIdx && longIdx.n >= (causeTop?.n || 0)) drill.push(`<li><b>10m 이상 거리감</b>: 홀 대신 지름 1m 원 안에 멈추기(래그 퍼트), 10·15·20m 백스윙 크기 기준 만들기 — 「홀을 50cm 지나게」</li>`);
+    if (P.p3.cause[0].n && P.p3.cause[0].n >= P.p3.cause[1].n) drill.push(`<li><b>5m 이내 3퍼트</b>: 첫 퍼트가 짧았는지(홀에 못 미침)·길었는지 메모에 남겨 두면 원인이 보입니다</li>`);
+    const fr5 = (x, y) => `${x}${isNum(y) ? `<span class="muted"> · 최근 5R ${y}</span>` : ""}`;
+    const trend = P.rounds.slice(0, 15).reverse();
+    app.innerHTML = `${head("putts")}
+      <h2>퍼트 분석 <span class="muted">퍼트를 기록한 ${P.n}홀 · ${P.rounds.length}라운드</span></h2>
+      <div class="kpis">
+        ${kpi("라운드당 퍼트", f1(per18(P.pph)), fr5("18홀 기준", isNum(P5.pph) ? f1(per18(P5.pph)) : null))}
+        ${kpi("3퍼트", f1(per18(P.three)), fr5(`18홀당 · ${pct(P.three)}`, isNum(P5.three) ? f1(per18(P5.three)) : null), P.three * 18 > settings.targets.p3.v ? "ng" : "")}
+        ${kpi("1퍼트", pct(P.one), fr5("홀 비율", isNum(P5.one) ? pct(P5.one) : null))}
+        ${kpi(`${P.SHORT}m 이내 1퍼트`, pct(P.short.make), fr5(`${P.short.n}번 중 ${P.short.n - P.short.miss}번`, isNum(P5.short.make) ? pct(P5.short.make) : null), P.short.make < 0.5 ? "ng" : "")}
+        ${kpi("평균 첫 퍼트", isNum(P.fp) ? f1(P.fp) + "m" : "-", fr5("거리감·어프로치 정확도", isNum(P5.fp) ? f1(P5.fp) + "m" : null))}
+      </div>
+
+      <h3>문제 진단</h3>
+      <div class="card"><ul class="sw">${dx.join("")}</ul>
+        ${drill.length ? `<h3 class="mt0" style="margin-top:12px">연습 우선순위</h3><ul class="sw">${drill.join("")}</ul>` : ""}</div>
+
+      <h3>첫 퍼트 거리대별</h3>
+      ${tbl(["첫 퍼트 거리", "홀 수", "평균 퍼트", "1퍼트", "2퍼트", "3퍼트+"], P.bands.map((b) => `<tr><td class="l"><b>${b.l}</b></td><td>${b.n}</td><td>${f2(b.putts)}</td><td class="${b.l === "1~2m" && isNum(b.one) && b.one < 0.5 ? "ng" : ""}">${pct(b.one)}</td><td>${pct(b.two)}</td><td class="${isNum(b.three) && b.three >= 0.25 ? "ng" : ""}">${pct(b.three)}</td></tr>`))}
+      <div class="card" style="margin-top:8px"><div class="chart-box"><canvas id="cPB"></canvas></div>
+        <p class="legend-note">짧은 거리에서 1퍼트(초록)가 적으면 마무리, 먼 거리에서 3퍼트(빨강)가 많으면 첫 퍼트 거리감 문제입니다. 1st 퍼트 거리는 m 단위 기록 기준.</p></div>
+
+      <h3>3퍼트 원인 <span class="muted">첫 퍼트 거리로 나눔</span></h3>
+      ${tbl(["", "3퍼트 수", "비율"], P.p3.cause.map((c) => `<tr><td class="l">${c.l}</td><td><b>${c.n}</b></td><td>${pct(P.p3.n ? c.n / P.p3.n : null)}</td></tr>`))}
+
+      <h3>그린 적중(GIR) 여부별</h3>
+      ${tbl(["", "홀 수", "평균 퍼트", "평균 첫 퍼트", "1퍼트", "3퍼트"], [["GIR 성공", P.gir.hit], ["GIR 실패", P.gir.miss]].map(([l, x]) => `<tr><td class="l">${l}</td><td>${x.n}</td><td>${f2(x.putts)}</td><td>${isNum(x.fp) ? f1(x.fp) + "m" : "-"}</td><td>${pct(x.one)}</td><td>${pct(x.three)}</td></tr>`))}
+      <p class="legend-note">GIR 홀은 보통 첫 퍼트가 더 멉니다. GIR 홀 3퍼트가 많으면 「온그린은 했는데 타수를 못 줄이는」 상황이라 롱퍼트 거리감이 1순위입니다.</p>
+
+      <h3>라운드별 추이 <span class="muted">최근 ${trend.length}라운드</span></h3>
+      <div class="card"><div class="chart-box tall"><canvas id="cPT"></canvas></div></div>
+      ${tbl(["날짜", "골프장", "퍼트", "3퍼트", "1퍼트", "평균 첫 퍼트", `${P.SHORT}m 이내 놓침`], P.rounds.slice(0, 15).map((r) => `<tr class="click" data-id="${esc(r.id)}"><td>${dot(r.date).slice(2)}</td><td class="l">${esc(r.course)}${r.holes !== 18 ? ` <span class="muted">${r.holes}홀</span>` : ""}</td><td><b>${r.putts}</b></td><td class="${r.p3 > settings.targets.p3.v ? "ng" : ""}">${r.p3}</td><td>${r.onep}</td><td>${isNum(r.fp) ? f1(r.fp) + "m" : "-"}</td><td class="${r.shortMiss && r.shortMiss >= r.shortN / 2 ? "ng" : ""}">${r.shortN ? `${r.shortMiss} / ${r.shortN}` : "-"}</td></tr>`))}
+
+      <h3>문제 홀 목록</h3>
+      <details class="card" style="margin-bottom:8px"><summary><b>놓친 짧은 퍼트</b> <span class="muted">${P.SHORT}m 이내에서 2퍼트 이상 · ${P.short.list.length}홀</span></summary>${holeList(P.short.list)}</details>
+      <details class="card"><summary><b>3퍼트 홀</b> <span class="muted">${P.p3.list.length}홀</span></summary>${holeList(P.p3.list)}</details>
+
+      <div id="memoWrap">${memoBlock(fr, "", "putt", "퍼트 메모")}</div>`;
+    function holeList(list) {
+      return list.length ? tbl(["날짜", "골프장", "홀", "첫 퍼트", "퍼트", "Score", "메모"], list.map((h) => `<tr class="click" data-id="${esc(h.rid)}"><td>${dot(h.date).slice(2)}</td><td class="l">${esc(h.course)}</td><td>${h.h}${isNum(h.par) ? ` <span class="muted">파${h.par}</span>` : ""}</td><td>${isNum(h.fp) ? h.fp + "m" : "-"}</td><td><b>${h.putts}</b></td><td>${sgn(h.score, 0)}</td><td class="l wrap">${esc(h.memo || "")}</td></tr>`)) : `<p class="legend-note">없습니다.</p>`;
+    }
+    app.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => (location.hash = "#/round/" + encodeURIComponent(tr.dataset.id))));
+    bindMemo(() => {});
+    const C1 = "#7fd1ae", C2 = "#7aa7f7", C3 = "#ff8f8f";
+    chart("cPB", {
+      type: "bar",
+      data: { labels: P.bands.map((b) => `${b.l} (${b.n})`), datasets: [["1퍼트", "one", C1], ["2퍼트", "two", C2], ["3퍼트+", "three", C3]].map(([l, k, c]) => ({ label: l, data: P.bands.map((b) => b[k]), backgroundColor: c })) },
+      options: baseOpts({ plugins: legendOn, scales: { x: { stacked: true, ...noGrid }, y: { stacked: true, max: 1, beginAtZero: true, ticks: { callback: (v) => Math.round(v * 100) + "%" }, ...noGrid } } }),
+      plugins: [{
+        id: "stackPct",
+        afterDatasetsDraw(c) {
+          const ctx = c.ctx;
+          ctx.save(); ctx.font = "600 11px Pretendard, sans-serif"; ctx.fillStyle = "#333"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          c.data.datasets.forEach((ds, i) => c.getDatasetMeta(i).data.forEach((el, j) => {
+            const v = ds.data[j];
+            if (isNum(v) && v >= 0.08) { const { x, y, base } = el.getProps(["x", "y", "base"], true); ctx.fillText(pct(v), x, (y + base) / 2); }
+          }));
+          ctx.restore();
+        },
+      }],
+    });
+    chart("cPT", {
+      type: "bar",
+      data: {
+        labels: trend.map((r) => r.date.slice(2).replaceAll("-", ".")),
+        datasets: [
+          { type: "line", label: "퍼트 수", data: trend.map((r) => r.putts), borderColor: C2, backgroundColor: C2, yAxisID: "y", pointRadius: 2.5, tension: 0 },
+          { type: "bar", label: "3퍼트", data: trend.map((r) => r.p3), backgroundColor: C3, yAxisID: "y1" },
+          { type: "bar", label: `${P.SHORT}m 이내 놓침`, data: trend.map((r) => (r.shortN ? r.shortMiss : null)), backgroundColor: "#ffd27a", yAxisID: "y1" },
+        ],
+      },
+      options: baseOpts({ plugins: legendOn, scales: { y: { position: "left", suggestedMin: 28, suggestedMax: 42, ...noGrid }, y1: { position: "right", beginAtZero: true, suggestedMax: 8, ticks: { precision: 0 }, ...noGrid }, x: noGrid } }),
+      plugins: [valueLabels((v) => v)],
+    });
   }
 
   // ───────────── 사용자 가이드 ─────────────
@@ -1552,7 +1794,7 @@
   };
   function guideView() {
     // 가이드 본문의 메뉴 이름 중 바뀐 것만 맨 위에 알려 준다(2026.10.26 메뉴 정리)
-    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·샷 분석 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭입니다. 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
+    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·샷 분석 탭, 「퍼트 분석」은 분석 메뉴의 퍼트 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭입니다. 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
     Guide.bind(app);
   }
 
@@ -1582,12 +1824,14 @@
       <div class="tbl-wrap"><table><thead><tr><th class="l">지표</th><th>목표</th><th>0점</th><th>100점</th></tr></thead>
         <tbody>${UNI.map((u) => {
           const t = u.t && tg[u.t], x = u.r && rd[u.r], k = RSCALE[u.r] || 1, unit = u.r && PCT.has(u.r) ? "%" : "";
-          const tIn = t ? `<input data-t="${u.t}" type="number" step="${t.fmt === "%" ? 1 : 0.5}" value="${t.fmt === "%" ? Math.round(t.v * 100) : t.v}" style="width:70px">${t.fmt === "%" ? " %" : ""}` : `<span class="muted">-</span>`;
+          const tIn = t ? `<input data-t="${u.t}" type="number" step="${t.fmt === "%" ? 1 : 0.5}" value="${t.fmt === "%" ? Math.round(t.v * 100) : t.v}" style="width:70px">${t.fmt === "%" ? " %" : ""}` : `<span class="muted" title="육각형 목표선 점수가 되는 값">${fmtT(uniGoal(u).v, uniGoal(u).fmt)}<br>(${settings.radarTarget}점 값)</span>`;
           const rIn = (w, v) => `<input data-${w}="${u.r}" type="number" step="${unit ? 1 : 0.1}" value="${+(v * k).toFixed(2)}" style="width:70px">${unit ? " %" : ""}`;
-          return `<tr><td class="l"><b>${u.label}</b>${x ? ` <span class="pill">${x.label}</span>` : ""}<br><span class="muted">${u.low ? "낮을수록 좋음" : "높을수록 좋음"}${u.r === "pph" ? " · 라운드(18홀)당" : ""}</span></td><td>${tIn}</td><td>${x ? rIn("rz", x.zero) : "-"}</td><td>${x ? rIn("rf", x.full) : "-"}</td></tr>`;
+          const sc = !x && settings.scores[u.t];
+          const sIn = (w, v) => `<input data-${w}="${u.t}" type="number" step="0.5" value="${v}" style="width:70px">`;
+          return `<tr><td class="l"><b>${u.label}</b>${x ? ` <span class="pill">${x.label}</span>` : ""}<br><span class="muted">${u.low ? "낮을수록 좋음" : "높을수록 좋음"}${u.r === "pph" ? " · 라운드(18홀)당" : ""}</span></td><td>${tIn}</td><td>${x ? rIn("rz", x.zero) : sc ? sIn("sz", sc.zero) : "-"}</td><td>${x ? rIn("rf", x.full) : sc ? sIn("sf", sc.full) : "-"}</td></tr>`;
         }).join("")}
         <tr><td class="l"><b>육각형 목표선</b><br><span class="muted">점수 기준선</span></td><td colspan="3"><input id="rTarget" type="number" value="${settings.radarTarget}" style="width:70px"> 점</td></tr></tbody></table></div>
-      <p class="legend-note">기준값은 아마추어 핸디캡별 통계 경향을 참고한 가정값입니다(100점 ≈ 싱글~10 핸디캡, 0점 ≈ 초보). 비율은 %로, 퍼트는 라운드당으로 입력합니다(저장은 0~1·홀당 형식으로 바꿔서 함).</p>
+      <p class="legend-note">평균 타수·파 이하 홀·더블보기+·벌타의 0점·100점은 실력 진단 표의 점수에만 쓰이고 육각형 모양은 그대로입니다. 거리감·위기관리의 목표는 육각형 목표선 점수가 되는 값으로 자동 계산합니다(100점 값이나 목표선을 바꾸면 같이 바뀜). 기준값은 아마추어 핸디캡별 통계 경향을 참고한 가정값입니다(100점 ≈ 싱글~10 핸디캡, 0점 ≈ 초보). 비율은 %로, 퍼트는 라운드당으로 입력합니다(저장은 0~1·홀당 형식으로 바꿔서 함).</p>
       <div class="row" style="margin-top:10px"><button class="btn" id="bSaveSet" type="button" ${G.canWrite() ? "" : "disabled"}>기준값 저장</button><button class="btn ghost" id="bResetSet" type="button">기본값 불러오기</button></div>
 
       <h2>내 클럽 거리 <span class="muted">평균 거리(m), 굴러간 거리 포함</span></h2>
@@ -1606,7 +1850,7 @@
 
       <h2>버전 <span class="muted">v${APP_VERSION}</span></h2>
       <div class="card">${APP_CHANGES.map((c) => `<h3 class="mt0">v${c.v} <span class="muted">${c.date}</span></h3><ul>${c.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
-        <p class="legend-note">2026.10.25 정식판을 1.0으로 정했습니다(이전 개발 과정은 0.1~0.9). 2026.10.26 중복 정리판이 1.1입니다. 기능을 고쳐도 따로 정하기 전까지 버전은 그대로 두고, 배포 번호(${typeof APP_BUILD === "string" ? APP_BUILD : "-"})만 바뀝니다. 새 버전이 나오면 화면 아래에 「새 버전이 있습니다 — 지금 적용」이 뜹니다.</p></div>`;
+        <p class="legend-note">2026.10.25 정식판을 1.0으로 정했습니다(이전 개발 과정은 0.1~0.9). 2026.10.26 중복 정리판이 1.1입니다. 기능을 고쳐도 따로 정하기 전까지 버전은 그대로 두고, 배포 번호(${typeof APP_BUILD === "string" ? APP_BUILD : "-"})만 바뀝니다. 새 버전이 나오면 앱을 열거나 다시 돌아올 때 자동으로 적용됩니다(라운드 입력·설정 화면에서는 「새 버전이 있습니다 — 지금 적용」 줄로 알려 줌).</p></div>`;
     const $ = (s) => document.getElementById(s);
     if ($("bInstall")) $("bInstall").onclick = async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; settingsView(); };
     G.usage().then((u) => {
@@ -1644,6 +1888,8 @@
       app.querySelectorAll("[data-t]").forEach((el) => { const t = tg[el.dataset.t]; const v = Number(el.value); if (el.value !== "" && isNum(v)) t.v = t.fmt === "%" ? v / 100 : v; });
       app.querySelectorAll("[data-rz]").forEach((el) => { const v = Number(el.value); if (el.value !== "" && isNum(v)) rd[el.dataset.rz].zero = v / (RSCALE[el.dataset.rz] || 1); });
       app.querySelectorAll("[data-rf]").forEach((el) => { const v = Number(el.value); if (el.value !== "" && isNum(v)) rd[el.dataset.rf].full = v / (RSCALE[el.dataset.rf] || 1); });
+      app.querySelectorAll("[data-sz]").forEach((el) => { const v = Number(el.value); if (el.value !== "" && isNum(v)) settings.scores[el.dataset.sz].zero = v; });
+      app.querySelectorAll("[data-sf]").forEach((el) => { const v = Number(el.value); if (el.value !== "" && isNum(v)) settings.scores[el.dataset.sf].full = v; });
       const rt = Number($("rTarget").value);
       if (isNum(rt)) settings.radarTarget = rt;
       try {
@@ -1707,8 +1953,14 @@
     // 새 버전 알림: 새 서비스 워커가 설치되어 화면을 넘겨받으면(controllerchange) 적용 버튼을 띄운다.
     // 처음 설치할 때는 이전 버전이 없으므로 띄우지 않는다.
     let hadController = !!navigator.serviceWorker.controller;
+    // 휴대폰판은 새 버전을 자동으로 적용한다: 입력·설정 화면이 아니면 바로 다시 읽고,
+    // 입력 중이면(사진·동영상은 임시 저장이 안 되므로) 알림 줄만 띄워 사용자가 고르게 한다.
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (hadController) showUpdateBar();
+      if (hadController) {
+        const editing = /^#\/(register|input|edit|settings)/.test(location.hash) || document.querySelector("#bCompSave, #bImport, #bSave, .viewer");
+        if (editing) showUpdateBar();
+        else location.reload();
+      }
       hadController = true;
     });
     navigator.serviceWorker.register("sw.js").then((reg) => {

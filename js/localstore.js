@@ -35,13 +35,19 @@ const GitHubStore = (() => {
   const del = (k) => tx("readwrite", (s) => s.delete(k));
   const keys = () => tx("readonly", (s) => s.getAllKeys());
 
-  // 사진은 화면이 <img src>로 바로 쓰도록 data: 주소로 저장하고, 시작할 때 메모리에 올려 둔다
+  // 사진은 화면이 <img src>로 바로 쓰도록 data: 주소로 저장하고, 시작할 때 메모리에 올려 둔다.
+  // 동영상은 커서(한 개 50MB까지) 문자열 대신 Blob으로 저장하고 화면에는 blob: 주소만 넘긴다.
   const PHOTOS = {};
+  const VIDEO_TYPE = { mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm" };
+  const extOf = (path) => (String(path).match(/\.(\w+)$/) || [])[1]?.toLowerCase() || "";
+  const toUrl = (v) => (v instanceof Blob ? URL.createObjectURL(v) : v);
+  const dataUrlToBlob = async (u) => (await fetch(u)).blob();
+  const blobToDataUrl = (b) => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => no(fr.error); fr.readAsDataURL(b); });
   let ready = null;
   function init() {
     if (!ready) ready = (async () => {
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* 지원 안 함 */ }
-      for (const k of await keys()) if (String(k).startsWith(PHOTO_DIR)) PHOTOS[k] = await get(k);
+      for (const k of await keys()) if (String(k).startsWith(PHOTO_DIR)) PHOTOS[k] = toUrl(await get(k));
     })();
     return ready;
   }
@@ -64,18 +70,29 @@ const GitHubStore = (() => {
     return { data: next, mirrorErrors: [] };
   }
   async function putFile(path, b64) {
-    const url = "data:image/jpeg;base64," + b64;
-    await put(path, url);
-    PHOTOS[path] = url;
+    const vt = VIDEO_TYPE[extOf(path)];
+    const val = vt ? await dataUrlToBlob(`data:${vt};base64,${b64}`) : "data:image/jpeg;base64," + b64;
+    await put(path, val);
+    PHOTOS[path] = toUrl(val);
     return [];
   }
-  async function deleteFile(path) { await del(path); delete PHOTOS[path]; }
+  async function deleteFile(path) {
+    await del(path);
+    if (String(PHOTOS[path]).startsWith("blob:")) URL.revokeObjectURL(PHOTOS[path]);
+    delete PHOTOS[path];
+  }
   const rawUrl = (path) => PHOTOS[path] || "";
 
+  // 백업 파일에는 동영상도 data: 주소로 넣는다(파일 하나로 옮길 수 있게)
+  async function exportPhotos() {
+    const out = {};
+    for (const k of Object.keys(PHOTOS)) { const v = await get(k); out[k] = v instanceof Blob ? await blobToDataUrl(v) : v; }
+    return out;
+  }
   /* 백업: 기록·기준값·사진을 한 파일(JSON)로. 복원은 같은 파일을 읽어 통째로 바꾼다. */
   async function exportAll() {
     await init();
-    return { app: "golf-lounge-hp", exportedAt: new Date().toISOString(), rounds: (await get(ROUNDS)) || [], settings: (await get(SETTINGS)) || null, photos: { ...PHOTOS } };
+    return { app: "golf-lounge-hp", exportedAt: new Date().toISOString(), rounds: (await get(ROUNDS)) || [], settings: (await get(SETTINGS)) || null, photos: await exportPhotos() };
   }
   async function importAll(obj) {
     if (!obj || !Array.isArray(obj.rounds)) throw new Error("백업 파일 형식이 아닙니다(rounds 없음).");
@@ -83,13 +100,17 @@ const GitHubStore = (() => {
     for (const k of Object.keys(PHOTOS)) await deleteFile(k);
     await put(ROUNDS, obj.rounds);
     if (obj.settings) await put(SETTINGS, obj.settings);
-    for (const [k, v] of Object.entries(obj.photos || {})) if (String(k).startsWith(PHOTO_DIR) && String(v).startsWith("data:image/")) { await put(k, v); PHOTOS[k] = v; }
+    for (const [k, v] of Object.entries(obj.photos || {})) {
+      if (!String(k).startsWith(PHOTO_DIR)) continue;
+      const val = String(v).startsWith("data:image/") ? v : String(v).startsWith("data:video/") ? await dataUrlToBlob(v) : null;
+      if (val) { await put(k, val); PHOTOS[k] = toUrl(val); }
+    }
     return obj.rounds.length;
   }
   async function wipe() {
     await init();
     for (const k of await keys()) await del(k);
-    for (const k of Object.keys(PHOTOS)) delete PHOTOS[k];
+    for (const k of Object.keys(PHOTOS)) { if (PHOTOS[k].startsWith("blob:")) URL.revokeObjectURL(PHOTOS[k]); delete PHOTOS[k]; }
   }
   async function usage() {
     const out = { persisted: null, used: null, quota: null };

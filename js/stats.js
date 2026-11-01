@@ -22,6 +22,13 @@ const GolfStats = (() => {
       crisis: { label: "위기관리", metric: "18홀당 벌타+더블+ 초과타", zero: 12, full: 0 },
     },
     radarTarget: 70,
+    // 육각형에 없는 지표(타수 계열·벌타)도 실력 진단 표에 0~100점을 보여 주려고 따로 둔 기준(육각형 모양은 그대로 7영역)
+    scores: {
+      strokes: { zero: 110, full: 80 },
+      parlow: { zero: 0, full: 12 },
+      dbl: { zero: 10, full: 1 },
+      pen: { zero: 8, full: 0 },
+    },
     targets: {
       strokes: { label: "평균 타수", v: 89, low: true, fmt: "1" },
       parlow: { label: "파 이하 홀 수", v: 6, low: false, fmt: "1" },
@@ -110,11 +117,11 @@ const GolfStats = (() => {
     return out;
   }
 
-  function radarScore(key, v, settings) {
-    if (!isNum(v)) return null;
-    const c = settings.radar[key];
-    return Math.round(Math.max(0, Math.min(100, ((v - c.zero) / (c.full - c.zero)) * 100)));
-  }
+  // 0점·100점 기준 사이를 직선으로 나눠 0~100점
+  const linScore = (c, v) => (!isNum(v) || !c || c.full === c.zero ? null : Math.round(Math.max(0, Math.min(100, ((v - c.zero) / (c.full - c.zero)) * 100))));
+  const radarScore = (key, v, settings) => linScore(settings.radar[key], v);
+  // 점수가 pt점이 되는 실제 값(목표가 따로 없는 거리감·위기관리는 육각형 목표선 점수의 값을 목표로 본다)
+  const valueAt = (c, pt) => (c ? c.zero + ((c.full - c.zero) * pt) / 100 : null);
   const radarOf = (list, settings) => {
     const pick = (k) => avg(list.map((r) => r[k]).filter(isNum));
     const raw = { fw: pick("fwp"), gir: pick("girp"), scr: pick("scrp"), pph: pick("pph"), p3: pick("p3r"), fp: pick("fp"), crisis: pick("crisis") };
@@ -142,7 +149,7 @@ const GolfStats = (() => {
       .map(([label, k]) => ({ label, all: avg(pick(dets, k)), r5: avg(pick(d5, k)) }));
     return {
       rs, recent, fulls, dets, best, metric, loss,
-      radar: radarOf(d5, settings), radarAll: radarOf(dets, settings),
+      radar: radarOf(d5, settings), radarAll: radarOf(dets, settings), radarLast: radarOf(dets.slice(0, 1), settings),
       courses: new Set(rs.map((r) => r.course)).size,
       tee: { L: sum(rs.map((r) => r.teeL)), R: sum(rs.map((r) => r.teeR)) },
     };
@@ -333,5 +340,95 @@ const GolfStats = (() => {
     };
   }
 
-  return { DEFAULT_SETTINGS, TARGET_BASIS, round, analyze, holeLevel, detailBlocks, holeGir, holeCheck, byRecent, isNum, avg, sum, scoreTypes, stability, trendBuckets, insights };
+  // ───── 홀 메모 분류: 라운드 중 적은 짧은 메모를 샷 종류·잘함/미스로 나눈다 ─────
+  // 메모는 자유 글이라 낱말로 추정한다. 한 메모에 여러 샷이 섞이므로(「4번 잘 쳤는데 9번 뒷땅」) 쉼표·마침표로 끊어 조각마다 판정한다.
+  // 조각에 샷 낱말이 없으면 앞 조각의 샷을 이어받는다(「뒷땅으로 그린 앞 벙커」처럼 주어가 빠진 문장).
+  const MEMO_CATS = [
+    ["putt", "퍼트", /펏|퍼트|퍼팅|홀컵|컵\s|라인|\d\s*퍼트/i],
+    ["bunker", "벙커", /벙커샷|벙커에서|탈출|모래|(벙커|벙거)(?!.*(들어|빠))/],   // 「벙커 들어감」은 앞 샷의 결과라 벙커샷으로 세지 않는다
+    ["appr", "어프로치", /어프로치|어프|칩|웨지|러닝|띄워|로브|[asg]w(?![a-z])/i],
+    ["tee", "티샷", /티샷|드라이버|드라|티\s|오비|ob(?![a-z])|슬라이스|(^|[^가-힣])슬($|[^가-힣])|훅|푸시|풀샷|페어웨이|fw/i],
+    ["second", "세컨·아이언", /세컨|써드|서드|아이언|우드|유틸|피칭|[3-9]번|(^|[^0-9a-z])[3-9](?![0-9])|(^|[^a-z])p(?![a-z])|pw|남은|남아|남고|남았|\d+\s*(m|미터)\s*남|\d온|그린\s*(앞|뒤|옆|넘|오른|왼|짧|길)/i],
+  ];
+  const MEMO_BAD = /미스|실수|탑|뒷땅|짤|짧|길게|길어|길음|오바|오버|넘어|넘김|해저드|빗나|아깝|아쉽|무리|생크|쪼루|철퍼|당겨|밀려|밀림|푸시|훅|슬라이스|(^|[^가-힣])슬($|[^가-힣])|오비|ob(?![a-z])|분실|못|안\s*보|안보|말리|3\s*퍼트|쓰리\s*퍼트|퍼덕|토핑|벙커\s*(빠|들어)/i;
+  const MEMO_GOOD = /잘|굿|나이스|좋|붙|성공|버디|파\s*세이브|세이브|1\s*퍼트|원\s*퍼트|원펏|한\s*번에|탈출|으로\s*온|로\s*온|홀\s*\d+(\.\d+)?\s*(m|미터)|정확|딱|컨택|기분/i;
+  function memoTone(s) {
+    const bad = MEMO_BAD.test(s), good = MEMO_GOOD.test(s.replace(/못\s*잘|잘\s*못/g, "못"));
+    return bad && good ? "mix" : bad ? "bad" : good ? "good" : "";
+  }
+  function memoNotes(rounds) {
+    const out = [];
+    for (const r of rounds) for (const h of r.holes || []) {
+      const text = String(h.memo || "").trim();
+      if (!text) continue;
+      let prev = "etc";
+      const parts = text.split(/[.,·/;\n]|그래서|했으나|하였으나|는데|지만/).map((x) => x.trim()).filter(Boolean).map((p) => {
+        const c = MEMO_CATS.find(([, , re]) => re.test(p));
+        const cat = c ? c[0] : prev;
+        prev = cat;
+        return { text: p, cat, tone: memoTone(p) };
+      });
+      const cats = [...new Set(parts.map((p) => p.cat))];
+      out.push({
+        rid: r.id, date: r.date, course: r.course, h: h.h, par: h.par, score: h.score, putts: h.putts, fp: h.fp, text, parts, cats,
+        tone: (c) => { const ts = parts.filter((p) => !c || p.cat === c).map((p) => p.tone); return ts.includes("bad") || ts.includes("mix") ? (ts.includes("good") || ts.includes("mix") ? "mix" : "bad") : ts.includes("good") ? "good" : ""; },
+      });
+    }
+    const byCat = [...MEMO_CATS.map(([k, l]) => [k, l]), ["etc", "기타"]].map(([k, l]) => {
+      const list = out.filter((n) => n.cats.includes(k));
+      const ps = list.flatMap((n) => n.parts.filter((p) => p.cat === k));
+      return { k, l, n: list.length, good: ps.filter((p) => p.tone === "good" || p.tone === "mix").length, bad: ps.filter((p) => p.tone === "bad" || p.tone === "mix").length, over: avg(list.filter((n) => isNum(n.score)).map((n) => n.score)) };
+    });
+    return { notes: byRecent(out), byCat, cats: Object.fromEntries([...MEMO_CATS.map(([k, l]) => [k, l]), ["etc", "기타"]]) };
+  }
+
+  // ───── 퍼트 분석: 퍼트·1st 퍼트 거리를 기록한 홀 ─────
+  // 짧은 거리(2m 이내)는 1퍼트로 끝낼 기회, 그보다 길면 2퍼트가 기준이라고 보고 그보다 더 친 퍼트를 「잃은 퍼트」로 센다.
+  const FP_BANDS = [["1~2m", 0, 2], ["3~5m", 2, 5], ["6~9m", 5, 9], ["10~14m", 9, 14], ["15m 이상", 14, 999]];
+  const SHORT = 2, LONG = 10;
+  function puttStats(rounds) {
+    const recent = byRecent(rounds);
+    const holes = [];
+    recent.forEach((r, ri) => {
+      for (const h of r.holes || []) if (isNum(h.putts) && isNum(h.score)) holes.push({ ...h, rid: r.id, date: r.date, course: r.course, ri, gir: holeGir(h) });
+    });
+    const withFp = holes.filter((h) => isNum(h.fp) && h.fp > 0 && h.putts > 0);
+    const bandRow = (l, x) => ({
+      l, n: x.length, putts: avg(x.map((h) => h.putts)),
+      one: ratio(x.filter((h) => h.putts === 1).length, x.length),
+      two: ratio(x.filter((h) => h.putts === 2).length, x.length),
+      three: ratio(x.filter((h) => h.putts >= 3).length, x.length),
+    });
+    const bands = FP_BANDS.map(([l, a, b]) => bandRow(l, withFp.filter((h) => h.fp > a && h.fp <= b)));
+    const short = withFp.filter((h) => h.fp <= SHORT);
+    const shortMiss = short.filter((h) => h.putts >= 2);
+    const long = withFp.filter((h) => h.fp >= LONG);
+    const p3 = holes.filter((h) => h.putts >= 3);
+    // 3퍼트를 첫 퍼트 거리로 나눠 원인을 본다: 가까운데 3퍼트면 마무리(짧은 퍼트), 멀면 첫 퍼트 거리감
+    const p3cause = [["5m 이내 (마무리 실수)", 0, 5], ["6~9m (중거리)", 5, 9], ["10m 이상 (첫 퍼트 거리감)", 9, 999]].map(([l, a, b]) => ({ l, n: p3.filter((h) => isNum(h.fp) && h.fp > a && h.fp <= b).length }));
+    const p3noFp = p3.filter((h) => !(isNum(h.fp) && h.fp > 0)).length;
+    // 라운드별(퍼트를 모든 홀에 적은 라운드)
+    const per = recent.map(round).filter((r) => r.detail).map((r) => {
+      const hs = withFp.filter((h) => h.rid === r.id);
+      const sh = hs.filter((h) => h.fp <= SHORT);
+      return { id: r.id, date: r.date, course: r.course, holes: r.holes, putts: r.putts, pph: r.pph, p3: r.p3, onep: r.onep, fp: r.fp, shortN: sh.length, shortMiss: sh.filter((h) => h.putts >= 2).length };
+    });
+    const lostShort = sum(short.map((h) => Math.max(0, h.putts - 1)));
+    const lostLong = sum(withFp.filter((h) => h.fp > SHORT).map((h) => Math.max(0, h.putts - 2)));
+    const girRow = (g) => { const x = holes.filter((h) => h.gir === g); return { n: x.length, putts: avg(x.map((h) => h.putts)), fp: avg(x.filter((h) => isNum(h.fp) && h.fp > 0).map((h) => h.fp)), three: ratio(x.filter((h) => h.putts >= 3).length, x.length), one: ratio(x.filter((h) => h.putts === 1).length, x.length) }; };
+    return {
+      n: holes.length, nFp: withFp.length, rounds: per,
+      pph: avg(holes.map((h) => h.putts)), fp: avg(withFp.map((h) => h.fp)),
+      one: ratio(holes.filter((h) => h.putts === 1).length, holes.length),
+      three: ratio(p3.length, holes.length),
+      bands, SHORT, LONG,
+      short: { n: short.length, miss: shortMiss.length, make: ratio(short.length - shortMiss.length, short.length), list: shortMiss },
+      long: { n: long.length, three: ratio(long.filter((h) => h.putts >= 3).length, long.length), p3: long.filter((h) => h.putts >= 3).length },
+      p3: { n: p3.length, list: p3, cause: p3cause, noFp: p3noFp },
+      lost: { short: lostShort, long: lostLong, perRound: (x) => (holes.length ? (x * 18) / holes.length : null) },
+      gir: { hit: girRow(1), miss: girRow(0) },
+    };
+  }
+
+  return { DEFAULT_SETTINGS, TARGET_BASIS, linScore, valueAt, round, analyze, holeLevel, detailBlocks, holeGir, holeCheck, byRecent, isNum, avg, sum, scoreTypes, stability, trendBuckets, insights, memoNotes, puttStats };
 })();
