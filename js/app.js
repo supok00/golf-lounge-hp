@@ -487,7 +487,7 @@
       <p class="legend-note">휴대폰에서는 표 폭을 줄이려고 「판정」·「전체 평균」 열을 숨깁니다(최근 5R 값의 초록=달성·빨강=미달이 판정과 같음, ▼ 낮을수록·▲ 높을수록 좋음). 판정은 목표값 기준(최근 5R), 「최근 라운드」는 가장 최근 1라운드 값(목표 달성은 초록·미달은 빨강)으로 5R 평균과 비교해 이번 라운드가 나아졌는지 봅니다${lastD && A.fulls[0] && A.dets[0] && A.fulls[0].id !== A.dets[0].id ? ` — 타수 지표는 ${dot(A.fulls[0].date)}, 퍼트·GIR 등은 퍼트를 기록한 ${dot(A.dets[0].date)} 라운드` : ""}. 점수는 설정의 0점·100점 기준으로 바꾼 값입니다(육각형 7영역 + 평균 타수·파 이하·더블보기+·벌타). 거리감·위기관리는 따로 정한 목표가 없어 <b>육각형 목표선(${settings.radarTarget}점)에 해당하는 값</b>을 목표로 판정합니다. 예전에는 두 표(실력 진단·육각형 기준)에 같은 지표가 따로 있었는데 하나로 합쳤습니다. 타수 지표는 18홀 라운드(${A.fulls.length}회), 나머지는 퍼트를 기록한 라운드(${A.dets.length}회) 기준.</p>
       <div class="grid g2" style="margin-top:12px">
         <div class="card"><h3 class="mt0">7영역 육각형 <span class="muted">최근 상세 5R vs 전체</span></h3><div class="chart-box tall"><canvas id="cRadar"></canvas></div>
-          <p class="legend-note">보라(채움): 최근 5라운드 · 회색 점선: 전체 평균 · 주황 점선: 목표선(${settings.radarTarget}점).</p></div>
+          <p class="legend-note">파랑(채움): 최근 5라운드 · 빨강 점선: 전체 평균 · 노랑 점선: 목표선(${settings.radarTarget}점).</p></div>
         <div class="card"><h3 class="mt0">라운드당 타수 손실 <span class="muted">최근 상세 5R</span></h3><div class="chart-box tall"><canvas id="cLoss"></canvas></div>
           <p class="legend-note">항목끼리 일부 겹칩니다(벌타 홀은 더블+가 되기 쉬움). 크기 비교로 연습 순서를 정하는 용도입니다.</p></div>
       </div>
@@ -506,9 +506,10 @@
       data: {
         labels: rk.map((k) => settings.radar[k].label),
         datasets: [
-          { label: "최근 5R", data: rk.map((k) => A.radar.score[k]), backgroundColor: "rgba(124,77,255,.18)", borderColor: "#7c4dff", borderWidth: 2.5, pointBackgroundColor: "#7c4dff", pointRadius: 3.5 },
-          { label: "전체 평균", data: rk.map((k) => A.radarAll.score[k]), borderColor: "#5f6878", borderDash: [3, 3], borderWidth: 2.5, backgroundColor: "transparent", pointBackgroundColor: "#5f6878", pointRadius: 3 },
-          { label: "목표", data: rk.map(() => settings.radarTarget), borderColor: "#ff9f43", borderDash: [7, 4], backgroundColor: "transparent", pointRadius: 0 },
+          // 파랑·빨강·노랑(신호등 계열 3원색 변형): 밝은 배경에서 세 선이 겹쳐도 확실히 구분된다
+          { label: "최근 5R", data: rk.map((k) => A.radar.score[k]), backgroundColor: "rgba(0,85,255,.14)", borderColor: "#0055FF", borderWidth: 2.5, pointBackgroundColor: "#0055FF", pointRadius: 3.5 },
+          { label: "전체 평균", data: rk.map((k) => A.radarAll.score[k]), borderColor: "#FF3B30", borderDash: [3, 3], borderWidth: 2.5, backgroundColor: "transparent", pointBackgroundColor: "#FF3B30", pointRadius: 3 },
+          { label: "목표", data: rk.map(() => settings.radarTarget), borderColor: "#FFCC00", borderDash: [7, 4], borderWidth: 2.5, backgroundColor: "transparent", pointRadius: 0 },
         ],
       },
       options: baseOpts({ plugins: legendOn, scales: { r: { min: 0, max: 100, ticks: { stepSize: 20, display: true, showLabelBackdrop: true, backdropColor: "rgba(255,255,255,.75)", color: "#8a93a6", font: { size: 10 } }, pointLabels: { font: { size: 13, weight: "600" } } } } }),
@@ -516,7 +517,7 @@
         id: "radarVals",
         afterDatasetsDraw(c) {
           const meta = c.getDatasetMeta(0), ctx = c.ctx;
-          ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.fillStyle = "#5b2fe0"; ctx.textAlign = "center";
+          ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.fillStyle = "#0044cc"; ctx.textAlign = "center";
           meta.data.forEach((p, i) => { const v = c.data.datasets[0].data[i]; if (isNum(v)) ctx.fillText(v, p.x, p.y - 8); });
           ctx.restore();
         },
