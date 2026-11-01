@@ -15,7 +15,7 @@
   let loadedAt = null;
   let charts = [];
   let courseDB = [];   // data/courses.json: 골프장 홈페이지에서 옮긴 코스별 Par·핸디캡·거리·공략(라운드 전 등록용)
-  let courseReqs = []; // data/course-requests.json: 앱에서 보낸 「골프장 정보 요청」 — GitHub Actions(tools/course_fetch.py)가 처리
+  let courseReqs = []; // data/course-requests.json: 앱에서 보낸 「골프장 정보 요청」 대기열 — Claude Code가 tools/course_fetch.py로 처리(API 비용 없음)
   const COURSES_PATH = "data/courses.json", REQS_PATH = "data/course-requests.json";
 
   // ───────────── 유틸 ─────────────
@@ -217,7 +217,8 @@
     root.querySelectorAll("[data-map]").forEach((b) => (b.onclick = () => openViewer(maps.map((h) => courseAsset(h.map)), Math.max(0, maps.findIndex((h) => h.h === Number(b.dataset.map))))));
   }
 
-  /* 골프장 정보 요청: 이름·홈페이지·코스·티를 data/course-requests.json에 남기면 GitHub Actions가 홈페이지를 읽어 등록한다(보통 3~10분).
+  /* 골프장 정보 요청: 이름·홈페이지·코스·티를 data/course-requests.json 대기열에 남긴다.
+   * Claude Code에서 「골프장 요청 처리해줘」라고 하면 홈페이지(표·홀 그림)를 읽어 등록하고 「완료」로 바꾼다.
    * pre: 입력 화면에서 적은 값으로 미리 채움. onDone: 요청을 저장한 뒤 다시 그리기 */
   const REQ_TONE = { 요청: "", "처리 중": "", 완료: "ok", 실패: "ng" };
   function reqStatusList(limit = 6) {
@@ -225,12 +226,12 @@
     if (!list.length) return "";
     return `<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th class="l">요청</th><th>상태</th><th class="l">결과</th></tr></thead><tbody>${list.map((q) => `<tr>
       <td class="l"><b>${esc(q.name)}</b> <span class="muted">${esc(q.courses.join("·"))} · ${esc(q.tee)}</span><br><span class="muted">${esc(q.requested || "")}</span></td>
-      <td><span class="pill ${REQ_TONE[q.status] || ""}">${esc(q.status)}</span></td><td class="l wrap">${esc(q.message || (q.status === "요청" ? "GitHub에서 처리 중입니다(보통 3~10분). 「새로 고침」으로 확인" : ""))}</td></tr>`).join("")}</tbody></table></div>`;
+      <td><span class="pill ${REQ_TONE[q.status] || ""}">${esc(q.status)}</span></td><td class="l wrap">${esc(q.message || (q.status === "요청" ? "대기 중 — Claude Code에서 「골프장 요청 처리해줘」라고 하면 등록됩니다" : ""))}</td></tr>`).join("")}</tbody></table></div>`;
   }
   function courseRequestForm(box, pre = {}, onDone = () => {}) {
     const pending = courseReqs.some((q) => q.status === "요청");
     box.innerHTML = `<div class="card" style="margin-top:10px"><h3 class="mt0">🔎 새 골프장 정보 요청</h3>
-      <p class="legend-note mt0">골프장 홈페이지 주소를 주면 GitHub에서 Claude가 홈페이지(표·홀 그림)를 읽어 Par·핸디캡·거리(m)·공략·홀 그림을 등록합니다. 보통 3~10분 걸리고, 끝나면 「골프장 정보 불러오기」에 나타납니다. 투 그린이면 좌그린, 같은 색 티가 여러 개면 가장 먼 티 기준입니다.</p>
+      <p class="legend-note mt0">요청은 대기 목록에 저장됩니다. <b>Claude Code에서 「골프장 요청 처리해줘」</b>라고 하면 홈페이지(표·홀 그림)를 읽어 Par·핸디캡·거리(m)·공략·홀 그림을 등록하고, 이후 「골프장 정보 불러오기」에 나타납니다(추가 비용 없음). 투 그린이면 좌그린, 같은 색 티가 여러 개면 가장 먼 티 기준입니다.</p>
       <div class="form">
         <label class="f">골프장 이름<input id="rqName" value="${esc(pre.course || "")}" placeholder="예: 아시아나CC"></label>
         <label class="f wide">홈페이지 주소<input id="rqUrl" type="url" value="${esc(findCourse(pre.course)?.url || "")}" placeholder="https://www.골프장.co.kr/"></label>
@@ -238,9 +239,8 @@
         <label class="f">티<input id="rqTee" value="${esc(pre.tee || "White")}" list="teeList"></label>
         <label class="f wide">메모(선택)<input id="rqMemo" placeholder="예: 홀 안내는 코스 소개 → 홀 공략 메뉴"></label>
       </div>
-      <p class="notice">휴대폰 저장판은 GitHub에 연결하지 않아 여기서 요청을 보낼 수 없습니다. <a href="${WEB_SITE}#/settings" target="_blank" rel="noopener"><b>웹판 설정 → 골프장 정보</b></a>에서 요청하면, 등록된 골프장은 이 앱의 「골프장 정보 불러오기」에도 나옵니다(「새로 고침」).</p>
-      <div class="row" style="margin-top:10px"><button class="btn" id="rqSend" type="button" disabled hidden>요청 보내기</button><button class="btn ghost" id="rqReload" type="button">새로 고침</button><button class="link" id="rqClose" type="button">닫기</button></div>
-      <p class="legend-note">처음 한 번 저장소 Settings → Secrets and variables → Actions에 <code>ANTHROPIC_API_KEY</code>를 넣어야 동작합니다(키는 앱·저장소 파일에 넣지 않음). 골프장 1곳당 Claude API 사용료가 듭니다.${pending ? " <b>처리 중인 요청이 있습니다.</b>" : ""}</p>
+      <p class="notice">휴대폰 저장판은 GitHub에 연결하지 않아 여기서 요청을 저장할 수 없습니다. <a href="${WEB_SITE}#/settings" target="_blank" rel="noopener"><b>웹판 설정 → 골프장 정보</b></a>에서 요청을 남기고 Claude Code에서 「골프장 요청 처리해줘」라고 하면, 등록된 골프장은 이 앱의 「골프장 정보 불러오기」에도 나옵니다(「새로 고침」).</p>
+      <div class="row" style="margin-top:10px"><button class="btn" id="rqSend" type="button" disabled hidden>요청 저장</button><button class="btn ghost" id="rqReload" type="button">새로 고침</button><button class="link" id="rqClose" type="button">닫기</button></div>
       ${reqStatusList()}</div>`;
     const v = (id) => document.getElementById(id).value.trim();
     document.getElementById("rqClose").onclick = () => (box.innerHTML = "");
@@ -252,10 +252,10 @@
       try {
         const { data } = await G.update((list) => [...(Array.isArray(list) ? list : []), q], `골프장 정보 요청: ${q.name} ${q.courses.join("·")} ${q.tee}`, REQS_PATH);
         courseReqs = data;
-        toast("요청을 보냈습니다. 3~10분 뒤 「새로 고침」으로 확인하세요.", 5000);
+        toast("요청을 대기 목록에 저장했습니다. Claude Code에서 「골프장 요청 처리해줘」라고 하면 등록됩니다.", 6000);
         courseRequestForm(box, pre, onDone);
         onDone();
-      } catch (err) { toast(err.message, 6000); e.target.disabled = false; e.target.textContent = "요청 보내기"; }
+      } catch (err) { toast(err.message, 6000); e.target.disabled = false; e.target.textContent = "요청 저장"; }
     };
   }
 
@@ -676,7 +676,7 @@
         <datalist id="teeList">${tees.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
         <div class="row" style="margin-top:10px"><button class="btn ghost" id="bCourseDB" type="button">⛳ 골프장 정보 불러오기 (Par·핸디캡·거리·공략)</button><button class="btn ghost" id="bCourseReq" type="button">🔎 새 골프장 정보 요청</button><button class="btn ghost" id="bCourse" type="button">이전 라운드 코스 정보 불러오기</button></div>
         <div id="reqBox"></div>
-        <p class="legend-note">「골프장 정보」는 골프장 홈페이지에서 옮겨 둔 코스 자료입니다${courseDB.length ? ` — 지금 등록: ${esc(courseChoices().join(", "))}` : ""}. 골프장·전반/후반 코스·티를 먼저 적고 누르세요. 없는 골프장은 「새 골프장 정보 요청」으로 홈페이지 주소를 주면 자동으로 등록됩니다. 라운드 전에 스코어 없이 저장하면 <b>예정 라운드</b>로 등록되어 홈과 라운드 목록에서 홀별 공략을 볼 수 있습니다.</p>
+        <p class="legend-note">「골프장 정보」는 골프장 홈페이지에서 옮겨 둔 코스 자료입니다${courseDB.length ? ` — 지금 등록: ${esc(courseChoices().join(", "))}` : ""}. 골프장·전반/후반 코스·티를 먼저 적고 누르세요. 없는 골프장은 「새 골프장 정보 요청」에 홈페이지 주소를 남기고 Claude Code에서 「골프장 요청 처리해줘」라고 하면 등록됩니다. 라운드 전에 스코어 없이 저장하면 <b>예정 라운드</b>로 등록되어 홈과 라운드 목록에서 홀별 공략을 볼 수 있습니다.</p>
       </div>
 
       <div class="holenav" id="holeNav"></div>
