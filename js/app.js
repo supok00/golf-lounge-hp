@@ -2333,7 +2333,8 @@
       }
       hadController = true;
     });
-    navigator.serviceWorker.register("sw.js").then((reg) => {
+    // updateViaCache "none": sw.js가 불러오는 js/version.js도 브라우저 HTTP 캐시(GitHub Pages 10분)를 거치지 않고 확인해, 배포 직후에도 새 버전을 바로 알아챈다
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
       const check = () => reg.update().catch(() => { /* 오프라인 */ });
       // 설치형 앱은 오래 켜 두거나 백그라운드에서 돌아오는 일이 많아, 돌아올 때와 30분마다 새 버전을 확인한다
       document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
