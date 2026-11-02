@@ -268,7 +268,7 @@
     return `<h3>홀별 야디지 · 공략 <span class="muted">${CH ? `${esc(CH.club.name)} ${esc(CH.tee)} 티${CH.green ? ` · ${CH.green}그린 기준` : ""}` : "입력한 거리 기준"} · OUT ${tot(1, 9, "dist")}m · IN ${tot(10, 18, "dist")}m</span></h3>
       ${CH?.notes.some((n) => /없|확인|추정/.test(n)) ? `<div class="notice" style="margin-bottom:8px">⚠ 등록 기준 확인: ${CH.notes.map(esc).join(" / ")}</div>` : ""}
       <div class="hguide">${rows.map(card).join("")}</div>
-      <p class="legend-note">「내 공략」은 <a href="#/settings">내 클럽 거리</a>로 계산한 추정입니다(티샷은 드라이버 평균 거리 가정${Clubs.isDefault(settings) ? ", 지금은 예시 클럽 거리" : ""}). 「📍」는 골프장 홈페이지 코스 안내를 요약한 공략이고, 「🗺 홀 그림」은 홈페이지 홀맵(해저드·벙커까지 거리, 고저차 포함 · 그림 속 숫자는 야드)입니다. 거리는 모두 미터(홈페이지 야드 × 0.9144)입니다.${CH?.club.url ? ` 출처: <a href="${esc(CH.club.url)}" target="_blank" rel="noopener">${esc(CH.club.name)} 홈페이지</a> (${esc(CH.club.updated || "")})` : ""}</p>`;
+      <p class="legend-note">「내 공략」은 <a href="#/settings?sec=clubs">내 클럽 거리</a>로 계산한 추정입니다(티샷은 드라이버 평균 거리 가정${Clubs.isDefault(settings) ? ", 지금은 예시 클럽 거리" : ""}). 「📍」는 골프장 홈페이지 코스 안내를 요약한 공략이고, 「🗺 홀 그림」은 홈페이지 홀맵(해저드·벙커까지 거리, 고저차 포함 · 그림 속 숫자는 야드)입니다. 거리는 모두 미터(홈페이지 야드 × 0.9144)입니다.${CH?.club.url ? ` 출처: <a href="${esc(CH.club.url)}" target="_blank" rel="noopener">${esc(CH.club.name)} 홈페이지</a> (${esc(CH.club.updated || "")})` : ""}</p>`;
   }
 
   const courseAsset = (path) => WEB_RAW + path;   // 홀 그림도 웹판 저장소 원본(서비스 워커가 한 번 본 그림은 저장)
@@ -325,19 +325,22 @@
   }
 
   // ───────────── 등록된 골프장 목록 · 골프장별 공략 ─────────────
-  // 라운드 날짜가 없어도 등록된 골프장의 홀별 공략을 볼 수 있게 한다(라운드 목록 위, 설정)
+  // 라운드 날짜가 없어도 등록된 골프장의 홀별 공략을 볼 수 있게 한다. 등록 목록·새 요청·요청 현황을 라운드 목록 한곳에 모은다(설정에는 바로가기만)
   const clubTotal = (c) => c.courses.map((cs) => { const t = Object.values(cs.tees || {})[0]; return t ? S.sum(t.holes.map((h) => h.dist || 0)) : 0; });
   function clubTable() {
     const list = openClubs();
-    if (!list.length) return "";
-    return `<h3>등록된 골프장 <span class="muted">${list.length}곳 · 아직 라운드로 옮기지 않은 골프장 · 누르면 홀별 공략</span></h3>
+    const tools = `<div class="row" style="margin-top:8px"><button class="btn ghost" id="bReqOpen" type="button">🔎 새 골프장 정보 요청</button></div><div id="clubReqBox"></div>${reqStatusList()}`;
+    if (!list.length) return `<h3 id="sec-courses">골프장 정보 <span class="muted">등록된 골프장 없음 · 라운드로 옮긴 골프장은 빠짐</span></h3>${tools}`;
+    return `<h3 id="sec-courses">골프장 정보 <span class="muted">등록 ${list.length}곳 · 아직 라운드로 옮기지 않은 골프장 · 누르면 홀별 공략</span></h3>
       <div class="tbl-wrap"><table><thead><tr><th class="l">골프장</th><th class="l">코스 · 티</th><th>거리</th><th>등록</th></tr></thead>
         <tbody>${list.map((c) => `<tr class="click" data-club="${esc(c.name)}"><td class="l"><b>${esc(c.name)}</b>${c.region ? ` <span class="muted">📍${esc(c.region)}</span>` : ""}</td>
           <td class="l">${c.courses.map((cs) => `${esc(cs.name)}${cs.holes18 ? "(18홀)" : ""} <span class="muted">${esc(Object.keys(cs.tees || {}).join("·"))}</span>`).join(" · ")}</td>
-          <td>${clubTotal(c).map((m) => (m ? m + "m" : "-")).join(" · ")}</td><td class="muted">${dot(c.updated || "")}</td></tr>`).join("")}</tbody></table></div>`;
+          <td>${clubTotal(c).map((m) => (m ? m + "m" : "-")).join(" · ")}</td><td class="muted">${dot(c.updated || "")}</td></tr>`).join("")}</tbody></table></div>${tools}`;
   }
-  function bindClubLinks() {
+  function bindClubLinks(redraw) {
     app.querySelectorAll("tr[data-club]").forEach((tr) => (tr.onclick = () => (location.hash = "#/course/" + encodeURIComponent(tr.dataset.club))));
+    const b = document.getElementById("bReqOpen");
+    if (b) b.onclick = () => courseRequestForm(document.getElementById("clubReqBox"), {}, redraw);
   }
   function courseView(name) {
     const club = findCourse(name);
@@ -450,6 +453,10 @@
     ["인사이트", "최근 90일 라운드 표", "공통 필터 「최근 90일」 + 라운드 목록과 같음", "삭제(필터로 봄)"],
     ["인사이트", "올해 골프장 KPI", "홈 「방문 골프장」·인사이트 요약 줄과 겹침", "삭제"],
     ["홈·분석", "「타수 추이」 두 개", "이름은 같지만 내용이 다름(라운드별 / 기간별 평균)", "둘 다 두고 이름 구분: 홈 「라운드별」, 분석 「기간별 평균 타수」"],
+    ["메뉴", "「인사이트」 메뉴", "이름은 분석 같은데 내용은 다녀온 지역·동반자 전적·라운드 패턴(분석 요약은 홈 「먼저 볼 것」)", "이름을 「기록·동반자」로 (2026.11.03)"],
+    ["분석", "샷 분석 ③ 첫 퍼트 거리대별", "퍼트 탭 「첫 퍼트 거리대별」과 같은 표", "퍼트 탭으로 합치고 안내 링크만 (2026.11.03)"],
+    ["골프장 정보", "등록 목록(라운드 목록)·요청·요청 현황(설정)", "세 곳에 흩어져 요청 현황을 보려면 설정까지 가야 함", "라운드 목록 「골프장 정보」에 모으고 설정은 바로가기 (2026.11.03)"],
+    ["메뉴", "분석 탭 순서 스코어·홀파·샷·퍼트", "자주 보는 퍼트가 뒤에", "스코어 → 홀·파 → 퍼트 → 샷 분석 (2026.11.03)"],
     ["메뉴", "통계·홀파·상세 분석 / 라운드 입력·붙여넣기", "비슷한 화면이 메뉴 10개로 흩어짐", "「분석」(스코어·홀파·샷) · 「라운드 입력」(직접·붙여넣기) 하위 탭, 메뉴 7개"],
     ["등록 값", "티샷 미스 선택지", "L·R·H·S 영어 글자만 보임", "「L 왼쪽 · R 오른쪽 · H 훅 · S 슬라이스」로 표시(FW 안착·티샷 미스 두 칸은 유지)"],
   ];
@@ -470,7 +477,7 @@
 
   // 메뉴를 줄이려고 비슷한 화면을 한 메뉴의 하위 탭으로 묶었다
   const SUB = {
-    analysis: [["score", "스코어", () => statsView()], ["holes", "홀·파", () => holesView()], ["shots", "샷 분석", () => detailView()], ["putts", "퍼트", () => puttsView()]],
+    analysis: [["score", "스코어", () => statsView()], ["holes", "홀·파", () => holesView()], ["putts", "퍼트", () => puttsView()], ["shots", "샷 분석", () => detailView()]],
     register: [["input", "직접 입력", () => inputView(null)], ["paste", "붙여넣기·사진", () => importView()]],
   };
   function route() {
@@ -494,6 +501,9 @@
     }
     bindFilter();
     window.scrollTo(0, 0);
+    // 「#/settings?sec=clubs」처럼 sec를 주면 그 섹션(id="sec-…")으로 바로 내려간다(다른 화면에서 바로가기)
+    const sec = new URLSearchParams(location.hash.split("?")[1] || "").get("sec");
+    if (sec) setTimeout(() => document.getElementById("sec-" + sec)?.scrollIntoView({ block: "start" }), 50);
   }
 
   // ───────────── 대시보드 ─────────────
@@ -1459,7 +1469,7 @@
         }).join("")}</tbody>
       </table></div>`;
     app.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", () => (location.hash = "#/round/" + encodeURIComponent(tr.dataset.id))));
-    bindClubLinks();
+    bindClubLinks(() => roundsView());
   }
   function roundView(id) {
     const r = rounds.find((x) => x.id === id);
@@ -1609,7 +1619,7 @@
       <div class="tbl-wrap"><table><thead><tr><th>연도</th><th>라운드</th><th>18홀</th><th>골프장 수</th><th>평균 타수</th><th>베스트</th><th>워스트</th></tr></thead>
         <tbody>${yr.map((r) => `<tr><td><b>${r.y}</b></td><td>${r.n}</td><td>${r.f}</td><td>${r.c}</td><td>${f1(r.avg)}</td><td>${r.best ?? "-"}</td><td>${r.worst ?? "-"}</td></tr>`).join("")}</tbody></table></div>
 
-      <p class="legend-note">골프장별 방문·평균·베스트는 <a href="#/insights">인사이트 → 다녀온 지역</a>의 「전체」에 있습니다.</p>`;
+      <p class="legend-note">골프장별 방문·평균·베스트는 <a href="#/insights">기록·동반자 → 다녀온 지역</a>의 「전체」에 있습니다.</p>`;
 
     app.querySelectorAll("[data-st]").forEach((b) => (b.onclick = () => {
       const t = types.find((x) => x.key === b.dataset.st);
@@ -1673,7 +1683,7 @@
     bindFilter();
   }
 
-  // ───────────── 라운드 인사이트 ─────────────
+  // ───────────── 기록·동반자 (예전 「인사이트」: 다녀온 지역·동반자 전적·라운드 패턴) ─────────────
   function insightsView() {
     const fr = frounds();
     const A = S.analyze(fr, settings);
@@ -2086,8 +2096,7 @@
         <p class="legend-note">${D.n}홀 분석. 상세 항목(FW·퍼트·1st 퍼트·미스 방향 등)을 기록한 홀만 각 표에 집계됩니다.</p></div>
       ${t("① 티샷 FW (파4·파5)", ["", "홀 수", "평균 Score", "더블+ 비율"], [["FW 안착", D.fw.in.n, sgn(D.fw.in.over), pct(D.fw.in.dbl)], ["FW 미스", D.fw.out.n, sgn(D.fw.out.over), pct(D.fw.out.dbl)], ["<b class='ng'>FW 미스 시 추가 타수</b>", "", `<b class="ng">${sgn(D.fw.diff)}</b>`, ""]], "FW 미스 홀의 평균 Score가 안착 홀보다 얼마나 높은지가 '티샷 정확도의 값'입니다. 차이가 크면 비거리보다 방향을 우선 연습합니다.")}
       ${t("② 그린 적중 (GIR)", ["", "홀 수", "평균 Score", "평균 퍼트"], [["GIR 성공", D.gir.hit.n, sgn(D.gir.hit.over), f2(D.gir.hit.putts)], ["GIR 실패", D.gir.miss.n, sgn(D.gir.miss.over), f2(D.gir.miss.putts)]], "GIR 실패 홀의 평균 Score가 +1.5 이상이면 그린 주변(어프로치·벙커)에서 타수가 크게 새고 있다는 뜻입니다.")}
-      ${t("③ 첫 퍼트 거리대별", ["", "홀 수", "평균 퍼트", "1퍼트율", "3퍼트율"], D.fp.map((x) => [x.l, x.n, f2(x.putts), pct(x.one), pct(x.three)]), "3퍼트율이 높은 거리대가 거리감 연습 1순위입니다.")}
-      <div class="card" style="margin-top:8px"><div class="chart-box"><canvas id="cFp"></canvas></div></div>
+      <p class="legend-note">③ 첫 퍼트 거리대별은 퍼트 탭의 같은 표와 겹쳐 <a href="#/analysis/putts">분석 → 퍼트 → 첫 퍼트 거리대별</a>로 합쳤습니다(1퍼트·3퍼트 비율, 3퍼트 원인까지).</p>
       ${t("⑤ 티샷 미스 방향", ["", "횟수", "비율", "평균 Score", "평균 벌타"], D.miss.map((x) => [x.l, x.n, pct(x.share), sgn(x.over), f2(x.pen)]), "한쪽으로 쏠림이 크면(예: R 60% 이상) 셋업·그립 점검 신호입니다.")}
       ${t("⑧ 홀 길이별 (실제로 친 티 거리)", ["", "홀 수", "평균 Score", "파 이하율", "더블+ 비율", "GIR"],
         [...D.len.p3.map((x) => ["파3 " + x.l, x.n, sgn(x.over), pct(x.parlow), pct(x.dbl), pct(x.gir)]),
@@ -2098,7 +2107,7 @@
         const AP = Clubs.approachStats(typeof fr !== "undefined" ? fr : rounds, settings, sel || null);
         return t("⑨ 예상 어프로치 클럽별 (추정)", ["", "홀 수", "평균 Score", "GIR", "더블+ 비율"],
           AP.map((x) => [x.label + (x.dist ? ` <span class="muted">${x.dist}m</span>` : ""), x.n, sgn(x.over), pct(x.gir), pct(x.dbl)]),
-          `홀 거리와 <a href="#/settings">내 클럽 거리</a>로 그린을 노린 클럽을 추정했습니다(티샷은 드라이버 평균 거리, 파5는 웨지 거리를 남기는 레이업으로 가정). 실제 친 클럽과 다를 수 있으니 경향만 보세요. GIR이 유난히 낮은 클럽이 연습 1순위입니다.${Clubs.isDefault(settings) ? " <b>지금은 예시 클럽 거리</b>로 계산했습니다." : ""}`);
+          `홀 거리와 <a href="#/settings?sec=clubs">⚙ 내 클럽 거리</a>로 그린을 노린 클럽을 추정했습니다(티샷은 드라이버 평균 거리, 파5는 웨지 거리를 남기는 레이업으로 가정). 실제 친 클럽과 다를 수 있으니 경향만 보세요. GIR이 유난히 낮은 클럽이 연습 1순위입니다.${Clubs.isDefault(settings) ? " <b>지금은 예시 클럽 거리</b>로 계산했습니다." : ""}`);
       })()}
       ${(() => {
         const DV = D.drive;
@@ -2117,7 +2126,6 @@
     const reMemo = () => { document.getElementById("memoWrap").innerHTML = memoBlock(fr, sel, "", "⑪ 홀 메모 · 잘한 샷과 미스"); bindMemo(reMemo); };
     bindMemo(reMemo);
     document.getElementById("scope").onchange = (e) => { location.hash = "#/detail" + (e.target.value ? "?r=" + encodeURIComponent(e.target.value) : ""); };
-    chart("cFp", { type: "bar", data: { labels: D.fp.map((x) => x.l), datasets: [{ label: "1퍼트율", data: D.fp.map((x) => x.one), backgroundColor: "#7fd1ae" }, { label: "3퍼트율", data: D.fp.map((x) => x.three), backgroundColor: "#ff8f8f" }] }, options: baseOpts({ plugins: legendOn, scales: { y: { beginAtZero: true, ticks: { callback: (v) => Math.round(v * 100) + "%" }, ...noGrid }, x: noGrid } }), plugins: [valueLabels(pct)] });
   }
 
   // ───────────── 퍼트 분석 ─────────────
@@ -2239,7 +2247,7 @@
   };
   function guideView() {
     // 가이드 본문의 메뉴 이름 중 바뀐 것만 맨 위에 알려 준다(2026.10.26 메뉴 정리)
-    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·샷 분석 탭, 「퍼트 분석」은 분석 메뉴의 퍼트 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭입니다. 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
+    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「퍼트 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·퍼트·샷 분석 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭, 「기록·동반자」는 예전 「인사이트」 메뉴입니다. 골프장 정보·요청은 <b>라운드 목록</b> 아래 「골프장 정보」, 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
     Guide.bind(app);
   }
 
@@ -2281,10 +2289,9 @@
       <div class="row" style="margin-top:10px"><button class="btn" id="bSaveSet" type="button" ${G.canWrite() ? "" : "disabled"}>기준값 저장</button><button class="btn ghost" id="bResetSet" type="button">기본값 불러오기</button></div>
 
       <h2>골프장 정보 <span class="muted">라운드 전 등록·홀별 공략</span></h2>
-      <div class="card"><p class="mt0">등록된 골프장(아직 라운드로 옮기지 않은 것, 누르면 홀별 공략): ${openClubs().length ? openClubs().map((c) => `<a class="pill" href="#/course/${encodeURIComponent(c.name)}">${esc(c.name)} · ${esc(c.courses.map((x) => x.name).join("·"))}</a>`).join(" ") : "없음"}</p>
-        <div class="row"><button class="btn ghost" id="bReqOpen" type="button">🔎 새 골프장 정보 요청</button></div><div id="setReqBox"></div>${reqStatusList()}</div>
+      <div class="card"><p class="mt0">등록된 골프장 ${openClubs().length}곳${courseReqs.some((q) => q.status === "요청") ? ` · <b>대기 중인 요청 ${courseReqs.filter((q) => q.status === "요청").length}건</b>` : ""}. 등록 목록·새 골프장 정보 요청·요청 현황은 <a href="#/rounds?sec=courses">라운드 목록 → 골프장 정보</a>에 모았습니다.</p></div>
 
-      <h2>내 클럽 거리 <span class="muted">평균 거리(m), 굴러간 거리 포함</span></h2>
+      <h2 id="sec-clubs">내 클럽 거리 <span class="muted">평균 거리(m), 굴러간 거리 포함</span></h2>
       ${Clubs.isDefault(settings) ? `<div class="notice">지금은 <b>예시값</b>입니다. 내 평균 거리로 바꾸고 저장하세요. 연습장이나 스마트 거리측정 기록의 '평소 거리'를 넣으면 됩니다(최고 거리 아님).</div>` : ""}
       <div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>사용</th><th class="l">클럽</th><th>거리(m)</th></tr></thead>
         <tbody>${(Array.isArray(settings.clubs) ? settings.clubs : Clubs.DEFAULT_BAG).map((c, i) => `<tr><td><input type="checkbox" data-con="${i}" ${c.on ? "checked" : ""}></td><td class="l"><input data-clab="${i}" value="${esc(c.label)}" style="width:170px"></td><td><input data-cdist="${i}" type="number" inputmode="numeric" step="5" min="0" value="${c.dist}" style="width:84px"></td></tr>`).join("")}</tbody></table></div>
@@ -2302,7 +2309,6 @@
       <div class="card">${APP_CHANGES.map((c) => `<h3 class="mt0">v${c.v} <span class="muted">${c.date}</span></h3><ul>${c.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
         <p class="legend-note">2026.10.25 정식판을 1.0으로 정했습니다(이전 개발 과정은 0.1~0.9). 2026.10.26 중복 정리판이 1.1, 2026.11.01 퍼트 분석·사진/동영상·라운드 전 등록판이 1.2입니다(웹판 golf-lounge와 같은 버전). 기능을 고쳐도 따로 정하기 전까지 버전은 그대로 두고, 배포 번호(${typeof APP_BUILD === "string" ? APP_BUILD : "-"})만 바뀝니다. 새 버전이 나오면 앱을 열거나 다시 돌아올 때 자동으로 적용됩니다(라운드 입력·설정 화면에서는 「새 버전이 있습니다 — 지금 적용」 줄로 알려 줌).</p></div>`;
     const $ = (s) => document.getElementById(s);
-    $("bReqOpen").onclick = () => courseRequestForm($("setReqBox"), {}, () => settingsView());
     if ($("bInstall")) $("bInstall").onclick = async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; settingsView(); };
     G.usage().then((u) => {
       const mb = (v) => (isNum(v) ? (v / 1048576).toFixed(1) + "MB" : "-");

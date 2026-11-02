@@ -194,6 +194,8 @@ ul.desc li::before { content: "•"; position: absolute; left: 0; color: #7aa7f7
 .guide-toc { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .guide-toc a { background: var(--lav); color: var(--lav-d); border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 700; text-decoration: none; }
 .guide-sec { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 18px 16px; margin-top: 14px; scroll-margin-top: 150px; line-height: 1.75; box-shadow: var(--shadow); }
+/* 붙여넣기 예시처럼 줄이 긴 예시는 휴대폰에서 화면 밖으로 나가지 않고 상자 안에서 가로로 넘겨 본다 */
+.guide-sec pre.ex { max-width: 100%; overflow-x: auto; }
 .guide-sec h2 { margin-top: 14px; }
 .guide-sec li { margin: 4px 0; }
 .guide td.wrap { white-space: normal; }
