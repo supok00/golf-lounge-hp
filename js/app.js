@@ -44,8 +44,8 @@
     const el = document.getElementById(id);
     if (el && window.Chart) charts.push(new Chart(el, cfg));
   }
-  // 차트 데이터 레이블: 값만 표시 (계열·항목 이름 없음)
-  const valueLabels = (fmt, color) => ({
+  // 차트 데이터 레이블: 값만 표시 (계열·항목 이름 없음). below(v, j, ds)가 참이면 점 아래에 적는다(선과 겹치지 않게)
+  const valueLabels = (fmt, color, below) => ({
     id: "valueLabels",
     afterDatasetsDraw(c) {
       const { ctx } = c;
@@ -62,6 +62,14 @@
           if (!isNum(v)) return;
           const hz = c.options.indexAxis === "y";
           ctx.fillStyle = (color && color(v, j, ds)) || "#333";
+          if (below) {
+            // 이동평균선과 겹치는 차트라 흰 테두리를 둘러 읽히게 한다
+            const y = below(v, j, ds) ? el.y + 16 : el.y - 8;
+            ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineJoin = "round";
+            ctx.strokeText(fmt(v), el.x, y);
+            ctx.fillText(fmt(v), el.x, y);
+            return;
+          }
           ctx.fillText(fmt(v), hz ? el.x + 18 : el.x, hz ? el.y + 4 : el.y - 6);
         });
       });
@@ -614,7 +622,8 @@
         ],
       },
       options: baseOpts({ plugins: legendOn, scales: { y: { suggestedMin: 75, suggestedMax: 110 }, x: noGrid } }),
-      plugins: [valueLabels((v) => v, (v, j, ds) => (ds.label !== "총타수" ? null : v > trendMA[j] ? UP : v < trendMA[j] ? DOWN : null))],
+      // 이동평균보다 높은 점수는 점 위, 낮은 점수는 점 아래에 적어 이동평균선과 겹치지 않게 한다
+      plugins: [valueLabels((v) => v, (v, j, ds) => (ds.label !== "총타수" ? null : v > trendMA[j] ? UP : v < trendMA[j] ? DOWN : null), (v, j) => v < trendMA[j])],
     });
   }
 
