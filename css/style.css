@@ -343,3 +343,24 @@ table.hgrid input[list]::-webkit-calendar-picker-indicator { display: none !impo
   .diag .dir-mark { display: inline; }
   .diag .dir-sub { font-size: 11.5px; }
 }
+
+/* ── 라운드 상세: 한눈에 보기 · 홀별 세로 보기 ── */
+.sumgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
+.sg-c { background: var(--card); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.sg-l { font-size: 12px; color: var(--ink-2); opacity: .75; font-weight: 600; }
+.sg-v { font-size: 15px; font-variant-numeric: tabular-nums; }
+.sg-v .muted { font-size: 12px; font-weight: 600; }
+table.holelist td, table.holelist th { padding: 6px 6px; text-align: center; font-variant-numeric: tabular-nums; }
+table.holelist tr.hl-memo td { text-align: left; font-size: 13px; color: var(--ink-2); padding-top: 0; white-space: normal; }
+table.holelist tr:has(+ tr.hl-memo) td { border-bottom: none; }
+table.holelist td.nw { white-space: nowrap; }
+table.holelist tr.hl-half td { text-align: left; font-weight: 800; background: var(--sky); color: var(--sky-d); }
+.hl-sc { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; font-weight: 800; }
+.hl-sc.b { border: 2px solid #e8833a; border-radius: 50%; color: #c45a12; }
+.hl-sc.q1 { border: 1.5px solid #6b7690; }
+.hl-sc.q2, .hl-sc.q3 { border: 1.5px solid #6b7690; outline: 1.5px solid #6b7690; outline-offset: 2px; }
+.hl-sc.q3 { background: #ffe0d2; }
+.hl-fw { color: #12a150; font-style: normal; }
+.hl-gir { color: #e5383b; font-style: normal; margin-left: 2px; }
+.hl-bk { color: #a07818; font-style: normal; font-weight: 800; margin-left: 2px; }
+.hl-s { color: #e5383b; margin-left: 1px; }

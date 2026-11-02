@@ -2,7 +2,7 @@
  * 홀 데이터(v2 홀별입력과 같은 항목):
  *   h 홀, par, dist 거리(m), hcp 핸디캡, score(+/-), fw FW 안착(1/0), miss 티샷 미스(L/R/H/S/-),
  *   drive 티샷 거리(m), ong 온그린 타수, putts, fp 1st 퍼트 거리(m),
- *   gmiss 그린 미스(짧음/길음/좌/우/-), appr 어프로치 시작거리(m), bunker 벙커샷 수, sg 숏게임 성공(1/0), pen 벌타, memo
+ *   gmiss 그린 미스(짧음/길음/좌/우/-), appr 어프로치 시작거리(m), bunker 벙커샷 수, sg 숏게임 성공(1/0), pen 벌타, ob OB 횟수(벌타에 포함), memo
  */
 const GolfStats = (() => {
   const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
@@ -28,6 +28,7 @@ const GolfStats = (() => {
       parlow: { zero: 0, full: 12 },
       dbl: { zero: 10, full: 1 },
       pen: { zero: 8, full: 0 },
+      sandp: { zero: 0, full: 0.5 },
     },
     targets: {
       strokes: { label: "평균 타수", v: 89, low: true, fmt: "1" },
@@ -38,10 +39,11 @@ const GolfStats = (() => {
       girp: { label: "GIR", v: 0.25, low: false, fmt: "%" },
       fwp: { label: "FW 안착", v: 0.5, low: false, fmt: "%" },
       scrp: { label: "스크램블", v: 0.25, low: false, fmt: "%" },
+      sandp: { label: "샌드세이브", v: 0.3, low: false, fmt: "%" },
       pen: { label: "벌타", v: 2, low: true, fmt: "1" },
     },
   };
-  const TARGET_BASIS = { strokes: "full", parlow: "full", dbl: "full", putts: "detail", p3: "detail", girp: "detail", fwp: "detail", scrp: "detail", pen: "detail" };
+  const TARGET_BASIS = { strokes: "full", parlow: "full", dbl: "full", putts: "detail", p3: "detail", girp: "detail", fwp: "detail", scrp: "detail", sandp: "sand", pen: "detail" };
 
   const missSide = (m) => {
     const x = String(m || "").toUpperCase();
@@ -68,6 +70,8 @@ const GolfStats = (() => {
       strokes: full ? sum(hs.map((h) => h.par + h.score)) : null,
       front: full ? sum(hs.filter((h) => h.h <= 9).map((h) => h.par + h.score)) : null,
       back: full ? sum(hs.filter((h) => h.h > 9).map((h) => h.par + h.score)) : null,
+      frontOver: full ? sum(hs.filter((h) => h.h <= 9).map((h) => h.score)) : null,
+      backOver: full ? sum(hs.filter((h) => h.h > 9).map((h) => h.score)) : null,
       birdie: hs.filter((h) => h.score <= -1).length,
       parn: hs.filter((h) => h.score === 0).length,
       bogey: hs.filter((h) => h.score === 1).length,
@@ -88,6 +92,9 @@ const GolfStats = (() => {
       out.p3r = (out.p3 * 18) / pt.length;   // 18홀당 3퍼트 수(9홀만 기록한 라운드도 같은 잣대로 비교)
       const gs = hs.map(holeGir).filter((g) => g !== null);
       out.gir = sum(gs);
+      out.girN = gs.length;
+      // 파온 퍼트: 그린에 정규 타수로 올린 홀의 평균 퍼트(먼 버디 퍼트를 붙이는 능력)
+      out.girPutt = avg(hs.filter((h) => holeGir(h) === 1 && isNum(h.putts)).map((h) => h.putts));
       out.girp = ratio(out.gir, gs.length);
       const miss = hs.filter((h) => holeGir(h) === 0);
       out.scrOp = miss.length;
@@ -103,6 +110,7 @@ const GolfStats = (() => {
     }
     const fws = hs.filter((h) => isNum(h.fw) && (!isNum(h.par) || h.par > 3));
     out.fw = fws.filter((h) => h.fw === 1).length;
+    out.fwN = fws.length;
     out.fwp = ratio(out.fw, fws.length);
     out.teeL = hs.filter((h) => missSide(h.miss) === "L").length;
     out.teeR = hs.filter((h) => missSide(h.miss) === "R").length;
@@ -111,6 +119,13 @@ const GolfStats = (() => {
     out.drive = avg(drv);
     out.driveN = drv.length;
     out.driveMax = drv.length ? Math.max(...drv) : null;
+    // 샌드세이브: 벙커샷을 한 홀 중 파 이하로 막은 비율(벙커샷 수를 적은 홀만 — 그린 주변·페어웨이 벙커를 따로 적지는 않음)
+    const sand = hs.filter((h) => isNum(h.bunker) && h.bunker > 0);
+    out.sandOp = sand.length;
+    out.sandOk = sand.filter((h) => h.score <= 0).length;
+    out.sandp = ratio(out.sandOk, sand.length);
+    const obs = hs.filter((h) => isNum(h.ob));
+    out.ob = obs.length ? sum(obs.map((h) => h.ob)) : null;
     out.bunker = hs.some((h) => isNum(h.bunker)) ? sum(hs.filter((h) => isNum(h.bunker)).map((h) => h.bunker)) : null;
     out.checks = hs.filter(holeCheck).map((h) => h.h);
     for (const p of [3, 4, 5]) out["p" + p + "avg"] = avg(hs.filter((h) => h.par === p).map((h) => h.score));
@@ -140,7 +155,8 @@ const GolfStats = (() => {
     const dets = recent.filter((r) => r.detail);
     const pick = (list, k) => list.map((r) => r[k]).filter(isNum);
     const metric = (key) => {
-      const list = TARGET_BASIS[key] === "full" ? fulls : dets;
+      // 샌드세이브는 벙커에 들어간 라운드만(벙커 없는 라운드는 값이 없어 평균에서 빠짐)
+      const list = TARGET_BASIS[key] === "full" ? fulls : TARGET_BASIS[key] === "sand" ? recent.filter((r) => r.sandOp) : dets;
       return { all: avg(pick(list, key)), r5: avg(pick(list.slice(0, 5), key)), last: list.length ? list[0][key] : null, n: list.length };
     };
     const best = fulls.length ? fulls.reduce((b, r) => (r.strokes < b.strokes ? r : b)) : null;
@@ -430,5 +446,5 @@ const GolfStats = (() => {
     };
   }
 
-  return { DEFAULT_SETTINGS, TARGET_BASIS, linScore, valueAt, round, analyze, holeLevel, detailBlocks, holeGir, holeCheck, byRecent, isNum, avg, sum, scoreTypes, stability, trendBuckets, insights, memoNotes, puttStats };
+  return { DEFAULT_SETTINGS, TARGET_BASIS, FP_BANDS, linScore, valueAt, round, analyze, holeLevel, detailBlocks, holeGir, holeCheck, byRecent, isNum, avg, sum, scoreTypes, stability, trendBuckets, insights, memoNotes, puttStats };
 })();
