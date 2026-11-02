@@ -1993,8 +1993,17 @@
 
   // ───────────── 홀·파 분석 ─────────────
   function holesView() {
-    const H = S.holeLevel(frounds());
+    const H = S.holeLevel(frounds()), HF = S.halves(frounds());
     const os = H.byHole.map((h) => h.over).filter(isNum);
+    // 전반·후반 표 한 줄: 차이는 후반 − 전반, good이 "low"면 줄어야 좋은 지표(오버·퍼트·더블+)
+    const hfRow = (lab, k, fmt, good) => {
+      const f = HF.F[k], b = HF.B[k], d = isNum(f) && isNum(b) ? b - f : null;
+      const better = isNum(d) && Math.abs(d) > 1e-9 ? (good === "low" ? d < 0 : d > 0) : null;
+      const dTxt = !isNum(d) ? "-" : fmt === pct ? `${d > 0 ? "+" : ""}${Math.round(d * 100)}%p` : `${d > 0 ? "+" : ""}${f2(d)}`;
+      return `<tr><td class="l">${lab}</td><td>${fmt(f)}</td><td>${fmt(b)}</td><td class="${better === null ? "" : better ? "ok" : "ng"}">${dTxt}</td></tr>`;
+    };
+    // 휴대폰 폭에서는 30라운드 숫자가 빽빽해 최근 12라운드만
+    const hfTrend = HF.rows.slice(0, innerWidth < 760 ? 12 : 30).reverse();
     const maxO = Math.max(...os), minO = Math.min(...os);
     const prow = (lab, x) => `<tr><td class="l"><b>${lab}</b></td><td>${x.n}</td><td>${f2(x.strokes)}</td><td><b>${sgn(x.over)}</b></td><td>${pct(x.birdie)}</td><td>${pct(x.parExact)}</td><td>${pct(x.bogey)}</td><td>${pct(x.double)}</td><td>${pct(x.triple)}</td></tr>`;
     app.innerHTML = `${head("holes")}
@@ -2005,18 +2014,34 @@
         <div class="card"><h3 class="mt0">파 유형별 평균 오버</h3><div class="chart-box"><canvas id="cPar"></canvas></div></div>
         <div class="card"><h3 class="mt0">연도별 파 유형 평균 오버</h3><div class="chart-box"><canvas id="cYearPar"></canvas></div></div>
       </div>
+      ${HF.n ? `<h2>전반 · 후반 <span class="muted">18홀 라운드 ${HF.n}회</span></h2>
+      <div class="tbl-wrap"><table><thead><tr><th class="l"></th><th>전반</th><th>후반</th><th>차이 <span class="muted">(후반−전반)</span></th></tr></thead>
+        <tbody>${hfRow("평균 오버", "over", f2, "low")}${hfRow("평균 타수 (9홀)", "strokes", f1, "low")}${hfRow("평균 퍼트 (9홀)", "putts", f1, "low")}${hfRow("GIR", "girp", pct, "high")}${hfRow("FW 안착", "fwp", pct, "high")}${hfRow("파 이하", "parlow", pct, "high")}${hfRow("더블+", "dbl", pct, "low")}</tbody></table></div>
+      <p class="legend-note">더 잘 친 쪽: <b>전반 ${HF.better.front}회</b> · <b>후반 ${HF.better.back}회</b> · 같음 ${HF.better.tie}회. 차이가 초록이면 후반이 더 좋고 빨강이면 후반에 더 나빠진 것입니다. 후반 오버·더블+가 꾸준히 늘면 체력·집중력, 전반만 나쁘면 워밍업 문제일 가능성이 큽니다. 퍼트는 9홀 모두 퍼트를 적은 반쪽만, GIR·FW·파 이하·더블+는 홀 단위로 모아 계산합니다.</p>
+      <div class="card" style="margin-top:12px"><h3 class="mt0">라운드별 전반·후반 오버 <span class="muted">최근 ${hfTrend.length}라운드</span></h3><div class="chart-box tall"><canvas id="cHalf"></canvas></div></div>
+      ${HF.byCourse.length ? `<h3>코스별 <span class="muted">같은 9홀을 전반·후반으로 돌았을 때</span></h3>
+      <div class="tbl-wrap"><table><thead><tr><th class="l">골프장 · 코스</th><th>9홀 수</th><th>평균 오버</th><th>전반으로</th><th>후반으로</th></tr></thead>
+        <tbody>${HF.byCourse.slice(0, 20).map((c) => `<tr><td class="l">${esc(c.course)} <b>${esc(c.name)}</b></td><td>${c.n}</td><td><b>${sgn(c.over, 1)}</b></td><td>${c.fN ? `${sgn(c.fOver, 1)} <span class="muted">(${c.fN})</span>` : "-"}</td><td>${c.bN ? `${sgn(c.bOver, 1)} <span class="muted">(${c.bN})</span>` : "-"}</td></tr>`).join("")}</tbody></table></div>
+      <p class="legend-note">라운드 입력의 「전반 코스」·「후반 코스」 이름으로 묶습니다(이름을 안 적은 라운드는 빠짐). 같은 코스인데 후반으로 돌 때만 나쁘면 순서(체력) 탓, 어느 쪽으로 돌아도 나쁘면 코스 탓입니다.</p>` : ""}` : ""}
       <h2>홀 번호별</h2>
       <div class="card"><div class="chart-box"><canvas id="cHole"></canvas></div>
         <p class="legend-note">골프장마다 홀 구성이 달라 홀 난이도 비교가 아니라, 첫 홀(워밍업)·막판(체력·집중력) 같은 흐름 패턴을 보는 용도입니다. 빨강=가장 약함, 파랑=가장 좋음.</p></div>
       <div class="tbl-wrap" style="margin-top:12px"><table><thead><tr><th>홀</th><th>기록 수</th><th>평균 Par</th><th>평균 타수</th><th>평균 오버</th><th>파 이하</th><th>더블+</th></tr></thead>
         <tbody>${H.byHole.map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${x.n}</td><td>${f1(x.par)}</td><td>${f2(x.strokes)}</td><td class="${x.over === maxO ? "ng" : x.over === minO ? "ok" : ""}"><b>${sgn(x.over)}</b></td><td>${pct(x.parlow)}</td><td>${pct(x.dbl)}</td></tr>`).join("")}</tbody></table></div>
-      ${(() => { const D = S.detailBlocks(frounds()); return D.hcp && D.hcp.length ? `<h2>홀 난이도 · 전후반 <span class="muted">핸디캡을 기록한 라운드</span></h2>
+      ${(() => { const D = S.detailBlocks(frounds()); return D.hcp && D.hcp.some((x) => x.n) ? `<h2>홀 난이도 <span class="muted">핸디캡을 기록한 홀</span></h2>
         <div class="tbl-wrap"><table><thead><tr><th class="l"></th><th>홀 수</th><th>평균 Score</th></tr></thead><tbody>${D.hcp.map((x) => `<tr><td class="l">${x.l}</td><td>${x.n}</td><td>${sgn(x.over)}</td></tr>`).join("")}</tbody></table></div>
-        <p class="legend-note">쉬운 홀(핸디캡 13~18)에서도 평균 +1 이상이면 실수 관리 문제입니다. (예전 상세 분석 ⑥을 옮김)</p>` : ""; })()}`;
+        <p class="legend-note">쉬운 홀(핸디캡 13~18)에서도 평균 +1 이상이면 실수 관리 문제입니다. 전반·후반 비교는 위 「전반 · 후반」으로 옮겼습니다.</p>` : ""; })()}`;
     chart("cPar", { type: "bar", data: { labels: ["파3", "파4", "파5"], datasets: [{ data: [3, 4, 5].map((p) => H.byPar[p].over), backgroundColor: "#ffb27a" }] }, options: baseOpts({ scales: { y: { beginAtZero: true, ...noGrid }, x: noGrid } }), plugins: [valueLabels(f2)] });
     const ypSets = ["p3", "p4", "p5"].map((k) => H.byYearPar.map((y) => y[k]));
     // 세 선의 값이 비슷한 해는 숫자가 겹치므로, 가까운 선이 위에 있으면 점 아래에 적는다. 숫자 색은 선 색에 맞춘다
     chart("cYearPar", { type: "line", data: { labels: H.byYearPar.map((y) => y.year), datasets: [["파3", "#7aa7f7"], ["파4", "#7fd1ae"], ["파5", "#ffb27a"]].map(([l, c], i) => ({ label: l, data: ypSets[i], borderColor: c, backgroundColor: c, pointRadius: 4, tension: 0 })) }, options: baseOpts({ layout: { padding: { top: 14, left: 8, right: 8 } }, plugins: legendOn, scales: { y: { grace: "12%", ...noGrid }, x: { offset: true, ...noGrid } } }), plugins: [valueLabels(f2, (v, j, ds) => ({ 파3: "#3b6fd8", 파4: "#2a9a6f", 파5: "#e07b22" })[ds.label], belowNearest(ypSets))] });
+    if (HF.n) {
+      const fs = hfTrend.map((r) => r.f.over), bs = hfTrend.map((r) => r.b.over);
+      // 같은 라운드에서 오버가 큰 쪽 숫자는 점 위, 작은 쪽은 점 아래(두 숫자가 겹치지 않게)
+      chart("cHalf", { type: "line", data: { labels: hfTrend.map((r) => r.date.slice(2).replaceAll("-", ".")), datasets: [["전반", fs, "#5b8def", "#2f6fd6"], ["후반", bs, "#ff9f5a", "#e07b22"]].map(([l, d, c]) => ({ label: l, data: d, borderColor: c, backgroundColor: c, pointRadius: 3, tension: 0 })) },
+        options: baseOpts({ layout: { padding: { top: 12 } }, plugins: legendOn, scales: { y: { grace: "10%", ticks: { callback: (v) => sgn(v, 0) }, ...noGrid }, x: noGrid } }),
+        plugins: [valueLabels((v) => sgn(v, 0), (v, j, ds) => (ds.label === "전반" ? "#2f6fd6" : "#e07b22"), belowNearest([fs, bs]))] });
+    }
     chart("cHole", { type: "bar", data: { labels: H.byHole.map((_, i) => i + 1), datasets: [{ data: H.byHole.map((h) => h.over), backgroundColor: H.byHole.map((h) => (h.over === maxO ? "#ff8f8f" : h.over === minO ? "#7aa7f7" : "#7fd1ae")) }] }, options: baseOpts({ scales: { y: { beginAtZero: true, ...noGrid }, x: noGrid } }), plugins: [valueLabels(f1)] });
   }
 

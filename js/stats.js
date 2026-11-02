@@ -209,6 +209,41 @@ const GolfStats = (() => {
     };
   }
 
+  /* 전반·후반 비교(18홀을 다 적은 라운드만). 반환 { n, F, B, rows:[{id,date,course,fName,bName,f,b}], better:{front,back,tie}, byCourse }
+   * F·B: 9홀 평균 오버·타수, 퍼트(9홀 모두 퍼트를 적은 반쪽만), GIR·FW·파 이하·더블+ 비율(홀 단위로 모아서) */
+  function halves(rounds) {
+    const half = (hs) => {
+      const pt = hs.filter((h) => isNum(h.putts)), gs = hs.map(holeGir).filter((g) => g !== null);
+      const fws = hs.filter((h) => isNum(h.fw) && h.par > 3);
+      return { over: sum(hs.map((h) => h.score)), strokes: sum(hs.map((h) => h.par + h.score)), putts: pt.length === hs.length ? sum(pt.map((h) => h.putts)) : null,
+        gir: sum(gs), girN: gs.length, fw: fws.filter((h) => h.fw === 1).length, fwN: fws.length,
+        parlow: hs.filter((h) => h.score <= 0).length, dbl: hs.filter((h) => h.score >= 2).length, n: hs.length };
+    };
+    const rows = rounds.map((r) => {
+      const hs = (r.holes || []).filter((h) => isNum(h.score) && isNum(h.par));
+      if (hs.length !== 18) return null;
+      return { id: r.id, date: r.date, course: r.course, fName: r.front || "", bName: r.back || "", f: half(hs.filter((h) => h.h <= 9)), b: half(hs.filter((h) => h.h > 9)) };
+    }).filter(Boolean).sort((a, b) => (a.date < b.date ? 1 : -1));
+    const pool = (k) => {
+      const xs = rows.map((r) => r[k]);
+      return { over: avg(xs.map((x) => x.over)), strokes: avg(xs.map((x) => x.strokes)), putts: avg(xs.map((x) => x.putts).filter(isNum)),
+        girp: ratio(sum(xs.map((x) => x.gir)), sum(xs.map((x) => x.girN))), fwp: ratio(sum(xs.map((x) => x.fw)), sum(xs.map((x) => x.fwN))),
+        parlow: ratio(sum(xs.map((x) => x.parlow)), sum(xs.map((x) => x.n))), dbl: ratio(sum(xs.map((x) => x.dbl)), sum(xs.map((x) => x.n))) };
+    };
+    // 같은 9홀 코스를 전반으로 돌았을 때와 후반으로 돌았을 때를 모아, 순서 탓인지 코스 탓인지 가려 본다
+    const cm = new Map();
+    rows.forEach((r) => [["f", r.fName], ["b", r.bName]].forEach(([k, name]) => {
+      if (!name) return;
+      const key = `${r.course}\u0000${name}`;
+      if (!cm.has(key)) cm.set(key, { course: r.course, name, f: [], b: [] });
+      cm.get(key)[k].push(r[k].over);
+    }));
+    const byCourse = [...cm.values()].map((c) => ({ course: c.course, name: c.name, n: c.f.length + c.b.length, over: avg([...c.f, ...c.b]), fN: c.f.length, fOver: avg(c.f), bN: c.b.length, bOver: avg(c.b) }))
+      .sort((a, b) => b.n - a.n || (a.over ?? 99) - (b.over ?? 99));
+    return { n: rows.length, F: pool("f"), B: pool("b"), rows, byCourse,
+      better: { front: rows.filter((r) => r.f.over < r.b.over).length, back: rows.filter((r) => r.b.over < r.f.over).length, tie: rows.filter((r) => r.f.over === r.b.over).length } };
+  }
+
   // v2 「상세분석」 시트와 같은 7개 블록. rid가 있으면 그 라운드만
   function detailBlocks(rounds, rid) {
     const hs = allHoles(rounds).filter((h) => !rid || h.rid === rid);
@@ -238,10 +273,7 @@ const GolfStats = (() => {
       hcp: [["핸디캡 1~6 (어려움)", 1, 6], ["핸디캡 7~12", 7, 12], ["핸디캡 13~18 (쉬움)", 13, 18]].map(([l, a, b]) => {
         const x = hs.filter((h) => isNum(h.hcp) && h.hcp >= a && h.hcp <= b);
         return { l, n: x.length, over: avg(x.map((h) => h.score)) };
-      }).concat([["전반 9홀", 1, 9], ["후반 9홀", 10, 18]].map(([l, a, b]) => {
-        const x = hs.filter((h) => h.h >= a && h.h <= b);
-        return { l, n: x.length, over: avg(x.map((h) => h.score)) };
-      })),
+      }),
       green: [["짧음", "짧음"], ["길음", "길음"], ["좌", "좌"], ["우", "우"]].map(([l, c]) => {
         const x = hs.filter((h) => h.gmiss === c);
         return { l: "그린 미스 " + l, n: x.length, over: avg(x.map((h) => h.score)), scr: null };
@@ -446,5 +478,5 @@ const GolfStats = (() => {
     };
   }
 
-  return { DEFAULT_SETTINGS, TARGET_BASIS, FP_BANDS, linScore, valueAt, round, analyze, holeLevel, detailBlocks, holeGir, holeCheck, byRecent, isNum, avg, sum, scoreTypes, stability, trendBuckets, insights, memoNotes, puttStats };
+  return { DEFAULT_SETTINGS, TARGET_BASIS, FP_BANDS, linScore, valueAt, round, analyze, holeLevel, halves, detailBlocks, holeGir, holeCheck, byRecent, isNum, avg, sum, scoreTypes, stability, trendBuckets, insights, memoNotes, puttStats };
 })();
