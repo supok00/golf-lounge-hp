@@ -44,7 +44,7 @@
     const el = document.getElementById(id);
     if (el && window.Chart) charts.push(new Chart(el, cfg));
   }
-  // 차트 데이터 레이블: 값만 표시 (계열·항목 이름 없음). below(v, j, ds)가 참이면 점 아래에 적는다(선과 겹치지 않게)
+  // 차트 데이터 레이블: 값만 표시 (계열·항목 이름 없음). below(v, j, ds)가 참이면 점 아래, "side"면 점 옆에 적는다(선과 겹치지 않게)
   const valueLabels = (fmt, color, below) => ({
     id: "valueLabels",
     afterDatasetsDraw(c) {
@@ -64,13 +64,53 @@
           ctx.fillStyle = (color && color(v, j, ds)) || "#333";
           if (below) {
             // 이동평균선과 겹치는 차트라 흰 테두리를 둘러 읽히게 한다
-            const y = below(v, j, ds) ? el.y + 16 : el.y - 8;
+            const pos = below(v, j, ds, c);
+            // 옆에 적을 때는 오른쪽에, 자기 선이 다음 점으로 올라가면 조금 아래·내려가면 조금 위로 비켜 선을 피한다
+            const nx = ds.data[j + 1], side = pos === "side";
+            const x = side ? el.x + 8 : el.x, y = side ? el.y + (!isNum(nx) ? 4 : nx > v ? 13 : -4) : pos ? el.y + 16 : el.y - 8;
+            ctx.textAlign = side ? "left" : "center";
             ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineJoin = "round";
-            ctx.strokeText(fmt(v), el.x, y);
-            ctx.fillText(fmt(v), el.x, y);
+            ctx.strokeText(fmt(v), x, y);
+            ctx.fillText(fmt(v), x, y);
             return;
           }
           ctx.fillText(fmt(v), hz ? el.x + 18 : el.x, hz ? el.y + 4 : el.y - 6);
+        });
+      });
+      ctx.restore();
+    },
+  });
+  // 여러 선이 한 차트에 있을 때: 같은 x에서 맨 위 선은 점 위, 맨 아래 선은 점 아래.
+  // 가운데 선은 위·아래 이웃과의 간격(픽셀)이 넉넉한 쪽에 적고, 둘 다 좁으면 점 옆에 적는다
+  const belowNearest = (sets) => (v, j, ds, c) => {
+    const others = sets.filter((d) => d !== ds.data).map((d) => d[j]).filter(isNum);
+    if (!others.length) return false;
+    const up = others.filter((o) => o > v), dn = others.filter((o) => o < v);
+    if (!up.length) return false;
+    if (!dn.length) return true;
+    const px = (a) => Math.abs(c.scales.y.getPixelForValue(a) - c.scales.y.getPixelForValue(v));
+    const gUp = px(Math.min(...up)), gDn = px(Math.max(...dn));
+    if (Math.max(gUp, gDn) >= 30) return gDn > gUp;
+    return "side";
+  };
+  // 육각형 값 표시: 각 꼭짓점에서 바깥(+)·안쪽(-)으로 띄워 흰 테두리 글자로. specs: [{ds, color, out(i), skip(i)}]
+  const radarLabels = (id, specs) => ({
+    id,
+    afterDatasetsDraw(c) {
+      const ctx = c.ctx, sc = c.scales.r;
+      ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.95)"; ctx.lineJoin = "round";
+      specs.forEach(({ ds, color, out, skip }) => {
+        if (c.getDatasetMeta(ds).hidden) return;
+        c.data.datasets[ds].data.forEach((v, i) => {
+          if (!isNum(v) || skip?.(i)) return;
+          const tip = sc.getPointPositionForValue(i, sc.max), d = sc.getDistanceFromCenterForValue(v);
+          const ux = (tip.x - sc.xCenter) / sc.drawingArea, uy = (tip.y - sc.yCenter) / sc.drawingArea;
+          // 바깥 끝(90점 이상)은 바깥에 적으면 항목 이름과 겹쳐 안쪽에 적는다
+          let k = out(i) && v < 90 ? d + 13 : d - 13, x, y;
+          if (k < 10) { k = d; x = sc.xCenter + ux * k - uy * 15; y = sc.yCenter + uy * k + ux * 15; } // 가운데에 너무 가까우면 옆으로 비킨다
+          else { x = sc.xCenter + ux * k; y = sc.yCenter + uy * k; }
+          ctx.fillStyle = color; ctx.strokeText(v, x, y); ctx.fillText(v, x, y);
         });
       });
       ctx.restore();
@@ -593,15 +633,12 @@
         ],
       },
       options: baseOpts({ plugins: legendOn, scales: { r: { min: 0, max: 100, ticks: { stepSize: 20, display: true, showLabelBackdrop: true, backdropColor: "rgba(255,255,255,.75)", color: "#8a93a6", font: { size: 10 } }, pointLabels: { font: { size: 13, weight: "600" } } } } }),
-      plugins: [{
-        id: "radarVals",
-        afterDatasetsDraw(c) {
-          const meta = c.getDatasetMeta(0), ctx = c.ctx;
-          ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.fillStyle = "#0044cc"; ctx.textAlign = "center";
-          meta.data.forEach((p, i) => { const v = c.data.datasets[0].data[i]; if (isNum(v)) ctx.fillText(v, p.x, p.y - 8); });
-          ctx.restore();
-        },
-      }],
+      // 최근 5R(파랑)과 전체 평균(빨강) 중 큰 값은 바깥, 작은 값은 안쪽에 적어 두 숫자가 겹치지 않게
+      plugins: [radarLabels("radarVals", [
+        { ds: 0, color: "#0044cc", out: (i) => !(A.radar.score[rk[i]] < A.radarAll.score[rk[i]]) },
+        // 두 값이 같으면 숫자 하나만(최근 5R) 적는다
+        { ds: 1, color: "#d92c22", out: (i) => A.radar.score[rk[i]] < A.radarAll.score[rk[i]], skip: (i) => A.radar.score[rk[i]] === A.radarAll.score[rk[i]] },
+      ])],
     });
     chart("cLoss", {
       type: "bar",
@@ -1479,15 +1516,7 @@
           ],
         },
         options: baseOpts({ plugins: legendOn, scales: { r: { min: 0, max: 100, ticks: { stepSize: 20, display: true, showLabelBackdrop: true, backdropColor: "rgba(255,255,255,.75)", color: "#8a93a6", font: { size: 10 } }, pointLabels: { font: { size: 13, weight: "600" } } } } }),
-        plugins: [{
-          id: "radarVals1",
-          afterDatasetsDraw(c) {
-            const meta = c.getDatasetMeta(0), ctx = c.ctx;
-            ctx.save(); ctx.font = "700 12px Pretendard, sans-serif"; ctx.fillStyle = "#0044cc"; ctx.textAlign = "center";
-            meta.data.forEach((pt, i) => { const v = c.data.datasets[0].data[i]; if (isNum(v)) ctx.fillText(v, pt.x, pt.y - 8); });
-            ctx.restore();
-          },
-        }],
+        plugins: [radarLabels("radarVals1", [{ ds: 0, color: "#0044cc", out: () => true }])],
       });
     }
     app.querySelectorAll(".photos.view [data-pv]").forEach((b) => (b.onclick = () => openViewer(r.photos.map(mediaItem), Number(b.dataset.pv))));
@@ -1598,6 +1627,9 @@
     bindRows();
     charts.forEach((c) => c.destroy());
     charts = [];
+    const tbAvgs = TB.buckets.map((b) => b.avg).filter(isNum), tbMean = S.avg(tbAvgs);
+    const tbLo = tbAvgs.length ? Math.min(...tbAvgs) : 85, tbHi = tbAvgs.length ? Math.max(...tbAvgs) : 100;
+    const tbMin = Math.floor((tbLo - Math.max(8, (tbHi - tbLo) * 1.5)) / 5) * 5, tbMax = Math.ceil((tbHi + 3) / 5) * 5;
     chart("cTB", {
       type: "bar",
       data: {
@@ -1607,12 +1639,13 @@
           { type: "bar", label: "라운드 수", data: TB.buckets.map((b) => b.n), backgroundColor: "rgba(122,167,247,.45)", yAxisID: "y1" },
         ],
       },
-      options: baseOpts({ plugins: legendOn, scales: { y: { position: "left", suggestedMin: 80, suggestedMax: 105, ...noGrid }, y1: { position: "right", beginAtZero: true, ...noGrid, ticks: { precision: 0 } }, x: noGrid } }),
+      // 라운드 수 막대는 아래쪽 절반에만 오게 축을 늘려, 위쪽 평균 타수 선·숫자와 겹치지 않게 한다
+      options: baseOpts({ plugins: legendOn, scales: { y: { position: "left", min: tbMin, max: tbMax, ...noGrid }, y1: { position: "right", beginAtZero: true, suggestedMax: Math.max(4, ...TB.buckets.map((b) => b.n)) * 3, ...noGrid, ticks: { precision: 0 } }, x: noGrid } }),
+      // 평균보다 높은 기간은 점 위, 낮은 기간은 점 아래에(홈 타수 추이와 같은 방식)
       plugins: [valueLabels((v) => (Number.isInteger(v) ? v : v.toFixed(1)), (v, j, ds) => {
         if (ds.type !== "line") return null;
-        const m = S.avg(TB.buckets.map((b) => b.avg).filter(isNum));
-        return v > m ? UP : v < m ? DOWN : null;
-      })],
+        return v > tbMean ? UP : v < tbMean ? DOWN : null;
+      }, (v, j, ds) => ds.type === "line" && v < tbMean)],
     });
     chart("cBand", {
       type: "doughnut",
@@ -1981,7 +2014,9 @@
         <div class="tbl-wrap"><table><thead><tr><th class="l"></th><th>홀 수</th><th>평균 Score</th></tr></thead><tbody>${D.hcp.map((x) => `<tr><td class="l">${x.l}</td><td>${x.n}</td><td>${sgn(x.over)}</td></tr>`).join("")}</tbody></table></div>
         <p class="legend-note">쉬운 홀(핸디캡 13~18)에서도 평균 +1 이상이면 실수 관리 문제입니다. (예전 상세 분석 ⑥을 옮김)</p>` : ""; })()}`;
     chart("cPar", { type: "bar", data: { labels: ["파3", "파4", "파5"], datasets: [{ data: [3, 4, 5].map((p) => H.byPar[p].over), backgroundColor: "#ffb27a" }] }, options: baseOpts({ scales: { y: { beginAtZero: true, ...noGrid }, x: noGrid } }), plugins: [valueLabels(f2)] });
-    chart("cYearPar", { type: "line", data: { labels: H.byYearPar.map((y) => y.year), datasets: [["p3", "파3", "#7aa7f7"], ["p4", "파4", "#7fd1ae"], ["p5", "파5", "#ffb27a"]].map(([k, l, c]) => ({ label: l, data: H.byYearPar.map((y) => y[k]), borderColor: c, backgroundColor: c, pointRadius: 4, tension: 0 })) }, options: baseOpts({ plugins: legendOn, scales: { y: noGrid, x: noGrid } }), plugins: [valueLabels(f2)] });
+    const ypSets = ["p3", "p4", "p5"].map((k) => H.byYearPar.map((y) => y[k]));
+    // 세 선의 값이 비슷한 해는 숫자가 겹치므로, 가까운 선이 위에 있으면 점 아래에 적는다. 숫자 색은 선 색에 맞춘다
+    chart("cYearPar", { type: "line", data: { labels: H.byYearPar.map((y) => y.year), datasets: [["파3", "#7aa7f7"], ["파4", "#7fd1ae"], ["파5", "#ffb27a"]].map(([l, c], i) => ({ label: l, data: ypSets[i], borderColor: c, backgroundColor: c, pointRadius: 4, tension: 0 })) }, options: baseOpts({ layout: { padding: { top: 14, left: 8, right: 8 } }, plugins: legendOn, scales: { y: { grace: "12%", ...noGrid }, x: { offset: true, ...noGrid } } }), plugins: [valueLabels(f2, (v, j, ds) => ({ 파3: "#3b6fd8", 파4: "#2a9a6f", 파5: "#e07b22" })[ds.label], belowNearest(ypSets))] });
     chart("cHole", { type: "bar", data: { labels: H.byHole.map((_, i) => i + 1), datasets: [{ data: H.byHole.map((h) => h.over), backgroundColor: H.byHole.map((h) => (h.over === maxO ? "#ff8f8f" : h.over === minO ? "#7aa7f7" : "#7fd1ae")) }] }, options: baseOpts({ scales: { y: { beginAtZero: true, ...noGrid }, x: noGrid } }), plugins: [valueLabels(f1)] });
   }
 
@@ -2147,6 +2182,10 @@
         },
       }],
     });
+    const ptv = trend.map((r) => r.putts).filter(isNum), ptMean = S.avg(ptv);
+    const ptLo = ptv.length ? Math.min(...ptv) : 30, ptHi = ptv.length ? Math.max(...ptv) : 40;
+    const ptMin = Math.floor((ptLo - Math.max(8, (ptHi - ptLo) * 1.5)) / 5) * 5, ptMax = Math.ceil((ptHi + 2) / 5) * 5;
+    const ptBar = Math.max(4, ...trend.map((r) => Math.max(r.p3 || 0, r.shortN ? r.shortMiss : 0)));
     chart("cPT", {
       type: "bar",
       data: {
@@ -2157,8 +2196,10 @@
           { type: "bar", label: `${P.SHORT}m 이내 놓침`, data: trend.map((r) => (r.shortN ? r.shortMiss : null)), backgroundColor: "#ffd27a", yAxisID: "y1" },
         ],
       },
-      options: baseOpts({ plugins: legendOn, scales: { y: { position: "left", suggestedMin: 28, suggestedMax: 42, ...noGrid }, y1: { position: "right", beginAtZero: true, suggestedMax: 8, ticks: { precision: 0 }, ...noGrid }, x: noGrid } }),
-      plugins: [valueLabels((v) => v)],
+      // 막대(3퍼트·짧은 퍼트 놓침)는 아래 절반, 퍼트 수 선은 위쪽에 오도록 두 축 범위를 벌려 숫자끼리 겹치지 않게 한다
+      options: baseOpts({ plugins: legendOn, scales: { y: { position: "left", min: ptMin, max: ptMax, ...noGrid }, y1: { position: "right", beginAtZero: true, suggestedMax: ptBar * 2.5, ticks: { precision: 0 }, ...noGrid }, x: noGrid } }),
+      // 퍼트 수는 평균보다 많으면 점 위(빨강), 적으면 점 아래(파랑)
+      plugins: [valueLabels((v) => v, (v, j, ds) => (ds.label !== "퍼트 수" ? null : v > ptMean ? UP : v < ptMean ? DOWN : null), (v, j, ds) => ds.label === "퍼트 수" && v < ptMean)],
     });
   }
 
