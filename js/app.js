@@ -171,6 +171,10 @@
   const TEE_KO = { 화이트: "white", 블루: "blue", 레드: "red", 블랙: "black", 골드: "gold", 레귤러: "white" };
   const teeKey = (t) => { const x = String(t || "").trim().toLowerCase(); return TEE_KO[x] || x; };
   const findCourse = (name) => courseDB.find((c) => [c.name, ...(c.alias || [])].some((a) => normName(a) === normName(name)));
+  /* 골프장 정보는 라운드에 홀 정보를 채우려고 받아 두는 것이라, 예정·지난 라운드로 옮겨지면 「등록된 골프장」·요청 현황에서는 뺀다.
+   * courses.json에는 남겨 둔다 — 그 라운드의 홀별 공략·홀 그림 카드가 여기서 읽기 때문 */
+  const clubUsed = (c) => rounds.some((r) => findCourse(r.course) === c);
+  const openClubs = () => courseDB.filter((c) => !clubUsed(c));
   /* 라운드의 골프장·전반/후반 코스·티로 18홀 정보를 만든다. 18홀짜리 코스(예: 아시아나 동)는 전반=1~9, 후반=10~18.
    * 반환 { club, tee, green, holes:[{h, par, hcp, dist(m), distR(다른 그린 m), tip}] } 또는 null */
   function courseHoles(r) {
@@ -230,7 +234,7 @@
    * pre: 입력 화면에서 적은 값으로 미리 채움. onDone: 요청을 저장한 뒤 다시 그리기 */
   const REQ_TONE = { 요청: "", "처리 중": "", 완료: "ok", 실패: "ng" };
   function reqStatusList(limit = 6) {
-    const list = courseReqs.slice().reverse().slice(0, limit);
+    const list = courseReqs.filter((q) => !(q.status === "완료" && findCourse(q.club || q.name) && clubUsed(findCourse(q.club || q.name)))).reverse().slice(0, limit);
     if (!list.length) return "";
     return `<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th class="l">요청</th><th>상태</th><th class="l">결과</th></tr></thead><tbody>${list.map((q) => `<tr>
       <td class="l">${q.status === "완료" && findCourse(q.club || q.name) ? `<a href="#/course/${encodeURIComponent(findCourse(q.club || q.name).name)}"><b>${esc(q.name)}</b></a>` : `<b>${esc(q.name)}</b>`} <span class="muted">${esc(q.courses.join("·"))} · ${esc(q.tee)}</span><br><span class="muted">${esc(q.requested || "")}</span></td>
@@ -239,12 +243,13 @@
   function courseRequestForm(box, pre = {}, onDone = () => {}) {
     const pending = courseReqs.some((q) => q.status === "요청");
     box.innerHTML = `<div class="card" style="margin-top:10px"><h3 class="mt0">🔎 새 골프장 정보 요청</h3>
-      <p class="legend-note mt0">요청은 대기 목록에 저장됩니다. <b>Claude Code에서 「골프장 요청 처리해줘」</b>라고 하면 홈페이지(표·홀 그림)를 읽어 Par·핸디캡·거리(m)·공략·홀 그림을 등록하고, 이후 「골프장 정보 불러오기」에 나타납니다(추가 비용 없음). 투 그린이면 좌그린, 같은 색 티가 여러 개면 가장 먼 티 기준입니다.</p>
+      <p class="legend-note mt0">요청은 대기 목록에 저장됩니다. <b>Claude Code에서 「골프장 요청 처리해줘」</b>라고 하면 홈페이지(표·홀 그림)를 읽어 Par·핸디캡·거리(m)·공략·홀 그림을 등록합니다(추가 비용 없음). <b>라운드 날짜</b>를 적으면 그 날짜의 <b>예정 라운드</b>까지 만들어 두고, 골프장은 목록에서 빠집니다(날짜가 없으면 「등록된 골프장」에 남아 있다가 그 골프장으로 라운드를 저장하면 빠짐). 투 그린이면 좌그린, 같은 색 티가 여러 개면 가장 먼 티 기준입니다.</p>
       <div class="form">
         <label class="f">골프장 이름<input id="rqName" value="${esc(pre.course || "")}" placeholder="예: 아시아나CC"></label>
         <label class="f wide">홈페이지 주소<input id="rqUrl" type="url" value="${esc(findCourse(pre.course)?.url || "")}" placeholder="https://www.골프장.co.kr/"></label>
         <label class="f">코스(쉼표로 여러 개)<input id="rqCourses" value="${esc([...new Set([pre.front, pre.back].filter(Boolean))].join(", "))}" placeholder="예: 동 또는 레이크, 밸리"></label>
         <label class="f">티<input id="rqTee" value="${esc(pre.tee || "White")}" list="teeList"></label>
+        <label class="f">라운드 날짜(선택)<input id="rqDate" type="date" value="${esc(pre.date || "")}"></label>
         <label class="f wide">메모(선택)<input id="rqMemo" placeholder="예: 홀 안내는 코스 소개 → 홀 공략 메뉴"></label>
       </div>
       <p class="notice">휴대폰 저장판은 GitHub에 연결하지 않아 여기서 요청을 저장할 수 없습니다. <a href="${WEB_SITE}#/settings" target="_blank" rel="noopener"><b>웹판 설정 → 골프장 정보</b></a>에서 요청을 남기고 Claude Code에서 「골프장 요청 처리해줘」라고 하면, 등록된 골프장은 이 앱의 「골프장 정보 불러오기」에도 나옵니다(「새로 고침」).</p>
@@ -254,11 +259,11 @@
     document.getElementById("rqClose").onclick = () => (box.innerHTML = "");
     document.getElementById("rqReload").onclick = async () => { await loadCourses(); courseRequestForm(box, pre, onDone); onDone(); toast("골프장 정보와 요청 현황을 다시 읽었습니다."); };
     document.getElementById("rqSend").onclick = async (e) => {
-      const q = { id: "q" + Date.now().toString(36), name: v("rqName"), url: v("rqUrl"), courses: v("rqCourses").split(/[,，·]/).map((x) => x.trim()).filter(Boolean), tee: v("rqTee"), memo: v("rqMemo"), status: "요청", requested: new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 16).replace("T", " ") };
+      const q = { id: "q" + Date.now().toString(36), name: v("rqName"), url: v("rqUrl"), courses: v("rqCourses").split(/[,，·]/).map((x) => x.trim()).filter(Boolean), tee: v("rqTee"), date: v("rqDate") || undefined, memo: v("rqMemo"), status: "요청", requested: new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 16).replace("T", " ") };
       if (!q.name || !/^https?:\/\//.test(q.url) || !q.courses.length || !q.tee) return toast("골프장 이름, 홈페이지 주소(https://…), 코스, 티를 적어 주세요.", 4000);
       // 이미 등록됐거나 대기 중인 같은 요청은 다시 쌓지 않는다
       const same = (x) => normName(x.name) === normName(q.name) && x.courses.join() === q.courses.join() && teeKey(x.tee) === teeKey(q.tee);
-      if (q.courses.every((c) => courseHoles({ course: q.name, front: c, back: c, tee: q.tee }))) return toast(`${q.name} ${q.courses.join("·")} ${q.tee} 정보는 이미 등록되어 있습니다. 라운드 목록 → 등록된 골프장에서 볼 수 있습니다.`, 5000);
+      if (q.courses.every((c) => courseHoles({ course: q.name, front: c, back: c, tee: q.tee }))) return toast(`${q.name} ${q.courses.join("·")} ${q.tee} 정보는 이미 등록되어 있습니다. 라운드 입력에서 「골프장 정보 불러오기」로 바로 채울 수 있습니다.`, 5000);
       if (courseReqs.some((x) => x.status === "요청" && same(x))) return toast("같은 요청이 이미 대기 중입니다.", 4000);
       e.target.disabled = true; e.target.textContent = "보내는 중…";
       try {
@@ -275,10 +280,11 @@
   // 라운드 날짜가 없어도 등록된 골프장의 홀별 공략을 볼 수 있게 한다(라운드 목록 위, 설정)
   const clubTotal = (c) => c.courses.map((cs) => { const t = Object.values(cs.tees || {})[0]; return t ? S.sum(t.holes.map((h) => h.dist || 0)) : 0; });
   function clubTable() {
-    if (!courseDB.length) return "";
-    return `<h3>등록된 골프장 <span class="muted">${courseDB.length}곳 · 누르면 홀별 공략 · 요청이 완료되면 여기에 추가</span></h3>
+    const list = openClubs();
+    if (!list.length) return "";
+    return `<h3>등록된 골프장 <span class="muted">${list.length}곳 · 아직 라운드로 옮기지 않은 골프장 · 누르면 홀별 공략</span></h3>
       <div class="tbl-wrap"><table><thead><tr><th class="l">골프장</th><th class="l">코스 · 티</th><th>거리</th><th>등록</th></tr></thead>
-        <tbody>${courseDB.map((c) => `<tr class="click" data-club="${esc(c.name)}"><td class="l"><b>${esc(c.name)}</b>${c.region ? ` <span class="muted">📍${esc(c.region)}</span>` : ""}</td>
+        <tbody>${list.map((c) => `<tr class="click" data-club="${esc(c.name)}"><td class="l"><b>${esc(c.name)}</b>${c.region ? ` <span class="muted">📍${esc(c.region)}</span>` : ""}</td>
           <td class="l">${c.courses.map((cs) => `${esc(cs.name)}${cs.holes18 ? "(18홀)" : ""} <span class="muted">${esc(Object.keys(cs.tees || {}).join("·"))}</span>`).join(" · ")}</td>
           <td>${clubTotal(c).map((m) => (m ? m + "m" : "-")).join(" · ")}</td><td class="muted">${dot(c.updated || "")}</td></tr>`).join("")}</tbody></table></div>`;
   }
@@ -2200,7 +2206,7 @@
       <div class="row" style="margin-top:10px"><button class="btn" id="bSaveSet" type="button" ${G.canWrite() ? "" : "disabled"}>기준값 저장</button><button class="btn ghost" id="bResetSet" type="button">기본값 불러오기</button></div>
 
       <h2>골프장 정보 <span class="muted">라운드 전 등록·홀별 공략</span></h2>
-      <div class="card"><p class="mt0">등록된 골프장(누르면 홀별 공략): ${courseDB.length ? courseDB.map((c) => `<a class="pill" href="#/course/${encodeURIComponent(c.name)}">${esc(c.name)} · ${esc(c.courses.map((x) => x.name).join("·"))}</a>`).join(" ") : "없음"}</p>
+      <div class="card"><p class="mt0">등록된 골프장(아직 라운드로 옮기지 않은 것, 누르면 홀별 공략): ${openClubs().length ? openClubs().map((c) => `<a class="pill" href="#/course/${encodeURIComponent(c.name)}">${esc(c.name)} · ${esc(c.courses.map((x) => x.name).join("·"))}</a>`).join(" ") : "없음"}</p>
         <div class="row"><button class="btn ghost" id="bReqOpen" type="button">🔎 새 골프장 정보 요청</button></div><div id="setReqBox"></div>${reqStatusList()}</div>
 
       <h2>내 클럽 거리 <span class="muted">평균 거리(m), 굴러간 거리 포함</span></h2>
