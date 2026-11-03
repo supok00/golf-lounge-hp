@@ -567,10 +567,10 @@
   function upcomingBox() {
     const up = rounds.filter((r) => r.planned && dday(r.date) >= 0).sort((a, b) => (a.date < b.date ? -1 : 1));
     if (!up.length) return "";
-    return `<div class="card upcoming"><div class="mt0" style="margin-bottom:8px">⛳ <b>다가오는 라운드</b> <span class="muted">${up.length}개</span></div>${up.map((r) => { const d = dday(r.date), CH = courseHoles(r); return `<div class="row" style="justify-content:space-between">
+    return `<div class="card upcoming"><div class="mt0" style="margin-bottom:8px">⛳ <b>다가오는 라운드</b> <span class="muted">${up.length}개</span></div>${up.map((r) => { const d = dday(r.date), CH = courseHoles(r); return `<div class="row up-row">
       <div><span class="pill ${d <= 3 ? "ng" : ""}">${d === 0 ? "오늘" : "D-" + d}</span>
         <b>${dot(r.date)}(${DOW[new Date(r.date + "T00:00:00").getDay()]})</b> ${esc(r.course)} <span class="muted">${esc([r.front, r.back].filter(Boolean).join("·"))}${r.tee ? " · " + esc(r.tee) : ""}${CH ? ` · ${CH.holes.reduce((a, h) => a + (h.dist || 0), 0)}m` : ""}</span></div>
-      <a class="btn" href="#/round/${encodeURIComponent(r.id)}">홀별 공략 보기</a></div>`; }).join("<hr>")}</div>`;
+      <a class="btn ghost xs" href="#/round/${encodeURIComponent(r.id)}">공략 보기 ›</a></div>`; }).join("<hr>")}</div>`;
   }
   function dashboard() {
     const fr = frounds();
