@@ -453,17 +453,17 @@
     ["인사이트", "최근 90일 라운드 표", "공통 필터 「최근 90일」 + 라운드 목록과 같음", "삭제(필터로 봄)"],
     ["인사이트", "올해 골프장 KPI", "홈 「방문 골프장」·인사이트 요약 줄과 겹침", "삭제"],
     ["홈·분석", "「타수 추이」 두 개", "이름은 같지만 내용이 다름(라운드별 / 기간별 평균)", "둘 다 두고 이름 구분: 홈 「라운드별」, 분석 「기간별 평균 타수」"],
+    ["메뉴", "통계·홀파·상세 분석 / 라운드 입력·붙여넣기", "비슷한 화면이 메뉴 10개로 흩어짐", "「분석」(스코어·홀파·샷) · 「라운드 입력」(직접·붙여넣기) 하위 탭, 메뉴 7개"],
+    ["등록 값", "티샷 미스 선택지", "L·R·H·S 영어 글자만 보임", "「L 왼쪽 · R 오른쪽 · H 훅 · S 슬라이스」로 표시(FW 안착·티샷 미스 두 칸은 유지)"],
     ["메뉴", "「인사이트」 메뉴", "이름은 분석 같은데 내용은 다녀온 지역·동반자 전적·라운드 패턴(분석 요약은 홈 「먼저 볼 것」)", "이름을 「기록·동반자」로 (2026.11.03)"],
     ["분석", "샷 분석 ③ 첫 퍼트 거리대별", "퍼트 탭 「첫 퍼트 거리대별」과 같은 표", "퍼트 탭으로 합치고 안내 링크만 (2026.11.03)"],
     ["골프장 정보", "등록 목록(라운드 목록)·요청·요청 현황(설정)", "세 곳에 흩어져 요청 현황을 보려면 설정까지 가야 함", "라운드 목록 「골프장 정보」에 모으고 설정은 바로가기 (2026.11.03)"],
     ["메뉴", "분석 탭 순서 스코어·홀파·샷·퍼트", "자주 보는 퍼트가 뒤에", "스코어 → 홀·파 → 퍼트 → 샷 분석 (2026.11.03)"],
-    ["메뉴", "통계·홀파·상세 분석 / 라운드 입력·붙여넣기", "비슷한 화면이 메뉴 10개로 흩어짐", "「분석」(스코어·홀파·샷) · 「라운드 입력」(직접·붙여넣기) 하위 탭, 메뉴 7개"],
-    ["등록 값", "티샷 미스 선택지", "L·R·H·S 영어 글자만 보임", "「L 왼쪽 · R 오른쪽 · H 훅 · S 슬라이스」로 표시(FW 안착·티샷 미스 두 칸은 유지)"],
   ];
   function reviewView() {
-    app.innerHTML = `<h2>중복 정리 내역 <span class="muted">2026.10.26</span></h2>
+    app.innerHTML = `<p><a href="#/guide">← 가이드로</a></p><h2>메뉴·화면 정리 내역 <span class="muted">2026.10.26 · 2026.11.03</span></h2>
       <p class="legend-note">등록 값·통계·분석·설정을 모두 훑어 같은 것을 두 번 묻거나 보여 주는 곳을 찾아 정리했습니다. 기록·저장 형식은 그대로입니다.</p>
-      <div class="tbl-wrap"><table><thead><tr><th class="l">위치</th><th class="l">겹치던 것</th><th class="l">왜 중복인가</th><th class="l">golf2에서</th></tr></thead>
+      <div class="tbl-wrap"><table><thead><tr><th class="l">위치</th><th class="l">겹치던 것</th><th class="l">왜 바꿨나</th><th class="l">정리</th></tr></thead>
         <tbody>${REVIEW.map((r) => `<tr><td class="l"><span class="pill">${r[0]}</span></td><td class="l"><b>${r[1]}</b></td><td class="l wrap">${r[2]}</td><td class="l wrap">${r[3]}</td></tr>`).join("")}</tbody></table></div>
       <h3>그대로 둔 것</h3>
       <ul class="desc">
@@ -487,7 +487,7 @@
     // 예전 주소(#/stats 등)도 새 메뉴의 하위 탭으로 연다
     const OLD = { stats: ["analysis", "score"], holes: ["analysis", "holes"], detail: ["analysis", "shots"], input: ["register", "input"], import: ["register", "paste"] };
     const [grp, sub] = OLD[tab] || (SUB[tab] ? [tab, arg] : [null, null]);
-    const active = tab === "round" || tab === "edit" || tab === "course" ? "rounds" : grp || tab;
+    const active = tab === "round" || tab === "edit" || tab === "course" ? "rounds" : tab === "review" ? "guide" : grp || tab;
     document.querySelectorAll("#tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === active));
     const views = { dashboard, input: () => inputView(null), edit: () => inputView(decodeURIComponent(arg || "")), rounds: roundsView, round: () => roundView(decodeURIComponent(arg || "")), stats: statsView, insights: insightsView, holes: holesView, detail: detailView, import: importView, guide: guideView, settings: settingsView, review: reviewView, course: () => courseView(decodeURIComponent(arg || "")) };
     const nav = document.getElementById("subnav");
@@ -591,7 +591,6 @@
     app.innerHTML = `
       ${welcomeBox()}
       ${upcomingBox()}
-      <div class="notice" style="margin-bottom:10px">🆕 겹치던 통계·분석·설정을 정리했습니다. <a href="#/review">무엇을 정리했나 보기 (${REVIEW.length}가지)</a></div>
       ${head("dashboard")}
       <h2>요약</h2>
       <div class="kpis">
@@ -614,7 +613,12 @@
             <td class="${isNum(sc) ? (sc >= settings.radarTarget ? "ok" : "ng") : ""}">${isNum(sc) ? `<b>${sc}</b>` : "-"}</td><td class="muted c-all">${fmtT(all, t.fmt)}</td></tr>`;
         }).join("")}</tbody>
       </table></div>
-      <p class="legend-note">휴대폰에서는 표 폭을 줄이려고 「판정」·「전체 평균」 열을 숨깁니다(최근 5R 값의 초록=달성·빨강=미달이 판정과 같음, ▼ 낮을수록·▲ 높을수록 좋음). 판정은 목표값 기준(최근 5R), 「최근 라운드」는 가장 최근 1라운드 값(목표 달성은 초록·미달은 빨강)으로 5R 평균과 비교해 이번 라운드가 나아졌는지 봅니다${lastD && A.fulls[0] && A.dets[0] && A.fulls[0].id !== A.dets[0].id ? ` — 타수 지표는 ${dot(A.fulls[0].date)}, 퍼트·GIR 등은 퍼트를 기록한 ${dot(A.dets[0].date)} 라운드` : ""}. 점수는 설정의 0점·100점 기준으로 바꾼 값입니다(육각형 7영역 + 평균 타수·파 이하·더블보기+·샌드세이브·벌타). 샌드세이브는 벙커샷 수를 적은 홀이 있는 라운드만 계산합니다. 거리감·위기관리는 따로 정한 목표가 없어 <b>육각형 목표선(${settings.radarTarget}점)에 해당하는 값</b>을 목표로 판정합니다. 예전에는 두 표(실력 진단·육각형 기준)에 같은 지표가 따로 있었는데 하나로 합쳤습니다. 타수 지표는 18홀 라운드(${A.fulls.length}회), 나머지는 퍼트를 기록한 라운드(${A.dets.length}회) 기준.</p>
+      <ul class="legend-list">
+        <li><b>판정</b> 최근 5R 평균이 목표를 달성했는지 — <span class="ok">초록 달성</span> · <span class="ng">빨강 미달</span> (▼ 낮을수록 · ▲ 높을수록 좋음)</li>
+        <li><b>최근 라운드</b> 가장 최근 1라운드 값 — 5R 평균보다 나아졌는지 비교${lastD && A.fulls[0] && A.dets[0] && A.fulls[0].id !== A.dets[0].id ? ` (타수 ${dot(A.fulls[0].date)} · 퍼트·GIR 등 ${dot(A.dets[0].date)})` : ""}</li>
+        <li><b>점수</b> <a href="#/settings">설정 → 지표 기준</a>의 0점·100점으로 환산 · 거리감·위기관리는 육각형 목표선(${settings.radarTarget}점) 값을 목표로 판정</li>
+        <li><b>집계</b> 타수 지표 18홀 ${A.fulls.length}회 · 나머지 퍼트 기록 ${A.dets.length}회 · 샌드세이브는 벙커샷을 적은 라운드만</li>
+      </ul>
       <div class="grid g2" style="margin-top:12px">
         <div class="card"><h3 class="mt0">7영역 육각형 <span class="muted">최근 상세 5R vs 전체</span></h3><div class="chart-box tall"><canvas id="cRadar"></canvas></div>
           <p class="legend-note">파랑(채움): 최근 5라운드 · 빨강 점선: 전체 평균 · 노랑 점선: 목표선(${settings.radarTarget}점).</p></div>
@@ -2247,7 +2251,8 @@
   };
   function guideView() {
     // 가이드 본문의 메뉴 이름 중 바뀐 것만 맨 위에 알려 준다(2026.10.26 메뉴 정리)
-    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「퍼트 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·퍼트·샷 분석 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭, 「기록·동반자」는 예전 「인사이트」 메뉴입니다. 골프장 정보·요청은 <b>라운드 목록</b> 아래 「골프장 정보」, 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다. <a href="#/review">정리 내역</a></div>` + Guide.render(GUIDE);
+    app.innerHTML = `<div class="notice" style="margin-bottom:12px"><b>휴대폰 저장판</b> — 이 앱은 기록을 휴대폰 안에 저장합니다. 가이드의 <b>GitHub 토큰·저장소·동기화</b> 이야기는 해당 없고, 대신 <b>설정 → 데이터</b>에서 백업 파일을 내려받아 두세요.</div><div class="notice" style="margin-bottom:12px"><b>메뉴 안내</b> — 가이드의 「통계」「홀·파 분석」「퍼트 분석」「상세 분석」은 <b>분석</b> 메뉴의 스코어·홀파·퍼트·샷 분석 탭, 「붙여넣기 등록」은 <b>라운드 입력</b> 메뉴의 붙여넣기·사진 탭, 「기록·동반자」는 예전 「인사이트」 메뉴입니다. 골프장 정보·요청은 <b>라운드 목록</b> 아래 「골프장 정보」, 목표 기준값과 육각형 기준은 설정의 <b>지표 기준</b> 한 표입니다.</div>
+      <div class="notice" style="margin-bottom:12px">🆕 <b>메뉴·화면 정리 내역</b> — 겹치던 통계·분석·설정을 어떻게 합치고 옮겼는지 <a href="#/review">보기 (${REVIEW.length}가지)</a> · 버전별 새 기능은 <a href="#/settings?sec=version">설정 → 버전</a></div>` + Guide.render(GUIDE);
     Guide.bind(app);
   }
 
@@ -2305,7 +2310,7 @@
       <div class="row" style="margin-top:10px"><button class="btn" id="bSaveClubs" type="button" ${G.canWrite() ? "" : "disabled"}>클럽 거리 저장</button><button class="btn ghost" id="bClubDefault" type="button">예시값으로</button></div>
       <p class="legend-note">저장하면 라운드 입력의 <b>공략 가이드</b>와 상세 분석 <b>⑨ 예상 어프로치 클럽별</b>에 쓰입니다. 안 쓰는 클럽은 「사용」을 끄세요.</p>
 
-      <h2>버전 <span class="muted">v${APP_VERSION}</span></h2>
+      <h2 id="sec-version">버전 <span class="muted">v${APP_VERSION}</span></h2>
       <div class="card">${APP_CHANGES.map((c) => `<h3 class="mt0">v${c.v} <span class="muted">${c.date}</span></h3><ul>${c.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
         <p class="legend-note">2026.10.25 정식판을 1.0으로 정했습니다(이전 개발 과정은 0.1~0.9). 2026.10.26 중복 정리판이 1.1, 2026.11.01 퍼트 분석·사진/동영상·라운드 전 등록판이 1.2입니다(웹판 golf-lounge와 같은 버전). 기능을 고쳐도 따로 정하기 전까지 버전은 그대로 두고, 배포 번호(${typeof APP_BUILD === "string" ? APP_BUILD : "-"})만 바뀝니다. 새 버전이 나오면 앱을 열거나 다시 돌아올 때 자동으로 적용됩니다(라운드 입력·설정 화면에서는 「새 버전이 있습니다 — 지금 적용」 줄로 알려 줌).</p></div>`;
     const $ = (s) => document.getElementById(s);
