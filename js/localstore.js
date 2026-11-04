@@ -126,5 +126,10 @@ const GitHubStore = (() => {
     syncStatus: async () => [], resync: async () => {}, pending: () => false, testToken: async () => ({ ok: true, msg: "휴대폰에 저장합니다(연결 필요 없음)." }),
     exportAll, importAll, wipe, usage, history, init,
     PRIMARY, MIRRORS: [], IS_ORIGIN: false, ORIGIN: PRIMARY, ROUNDS, SETTINGS, DATA_DIR, LOCAL: true,
+    // 웹판 github.js와 같은 저장 층 공통 이름(2026-11-04 서버판 준비로 정리) — app.js는 이것만 쓴다
+    KIND: "local", COURSES: "data/courses.json", COURSE_REQS: "data/course-requests.json",
+    mediaPath: (file) => PHOTO_DIR + file, mediaUrl: rawUrl,
+    where: () => ({ isOwner: false, label: `${PRIMARY.owner}`, file: ROUNDS, siteUrl: "supok00.github.io/golf-lounge-hp", repos: [PRIMARY.repo], origin: "supok00/golf-lounge" }),
+    hasMirrors: () => false, mirrorRepos: () => [PRIMARY.repo], resyncAll: async () => {},
   };
 })();
